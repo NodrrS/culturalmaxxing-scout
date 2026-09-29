@@ -49,6 +49,29 @@
       leftOut: ['Checked and left out: {n} shop', 'Checked and left out: {n} shops'],
       map: { label: 'Map of the shops found. Use the arrow keys to move it.', zoomIn: 'Zoom in', zoomOut: 'Zoom out', none: 'None of these shops has a confirmed place to visit yet.', credit: '© OpenStreetMap contributors' },
       culture: { african: 'African', central_asian: 'Central Asian', south_asian: 'South Asian', middle_eastern: 'Middle Eastern', east_asian: 'East Asian', balkan: 'Balkan', latin_american: 'Latin American', modest: 'Modest', fusion: 'Fusion' },
+      fb: {
+        question: 'Have you been there? Does this shop exist?',
+        yes: 'Yes, it exists', no: 'No, it doesn’t',
+        noteLabel: 'Anything that doesn’t match? (optional)',
+        placeholder: 'For example: it’s a Turkish perfume shop, not an Arab one.',
+        hint: 'Please don’t include names or contact details.',
+        send: 'Send', cancel: 'Cancel',
+        thanks: 'Thanks. Scout will use this the next time it checks this shop.',
+        fromVisitors: 'From visitors',
+        saysExists: ['{n} visitor says it exists', '{n} visitors say it exists'],
+        saysGone: ['{n} visitor says it doesn’t', '{n} visitors say it doesn’t'],
+        noteBy: 'Visitor note, {date}. Not checked by Scout',
+        reportedGone: 'On {date} a visitor reported that this shop no longer exists. It stays “not yet confirmed” until someone confirms it.',
+        reportedThere: 'On {date} a visitor reported that this shop exists, although Scout found it {status}. Scout will check it again.',
+        statusWord: { closed: 'closed', moved: 'moved' },
+      },
+      tip: {
+        title: 'Know a shop Scout missed?',
+        body: 'Tell Scout about it. Tips are checked like any other lead before they show up in results.',
+        name: 'Shop name', where: 'Where: street or area', what: 'What they sell', link: 'Link, optional: website or Instagram',
+        send: 'Send tip', thanks: 'Thanks. Scout will check it in its next searches.', another: 'Send another tip',
+        needName: 'Please give the shop’s name.', needLink: 'A link has to start with http:// or https://.',
+      },
       failed: 'Scout stopped. {why}', langLabel: 'Sprache wechseln', other: 'DE',
     },
     de: {
@@ -95,6 +118,29 @@
       leftOut: ['Geprüft und aussortiert: {n} Laden', 'Geprüft und aussortiert: {n} Läden'],
       map: { label: 'Karte der gefundenen Läden. Mit den Pfeiltasten verschieben.', zoomIn: 'Vergrößern', zoomOut: 'Verkleinern', none: 'Für keinen dieser Läden ist schon ein Ort zum Besuchen bestätigt.', credit: '© OpenStreetMap-Mitwirkende' },
       culture: { african: 'Afrikanisch', central_asian: 'Zentralasiatisch', south_asian: 'Südasiatisch', middle_eastern: 'Nahöstlich', east_asian: 'Ostasiatisch', balkan: 'Balkan', latin_american: 'Lateinamerikanisch', modest: 'Modest', fusion: 'Fusion' },
+      fb: {
+        question: 'Warst du dort? Gibt es diesen Laden?',
+        yes: 'Ja, es gibt ihn', no: 'Nein, gibt es nicht',
+        noteLabel: 'Stimmt etwas nicht? (optional)',
+        placeholder: 'Zum Beispiel: Es ist ein türkischer Parfümladen, kein arabischer.',
+        hint: 'Bitte keine Namen oder Kontaktdaten angeben.',
+        send: 'Senden', cancel: 'Abbrechen',
+        thanks: 'Danke. Scout berücksichtigt das, wenn es diesen Laden das nächste Mal prüft.',
+        fromVisitors: 'Von Besuchern',
+        saysExists: ['{n} Person sagt, es gibt ihn', '{n} Personen sagen, es gibt ihn'],
+        saysGone: ['{n} Person sagt, es gibt ihn nicht', '{n} Personen sagen, es gibt ihn nicht'],
+        noteBy: 'Hinweis von Besuchern, {date}. Von Scout nicht geprüft',
+        reportedGone: 'Am {date} hat jemand gemeldet, dass es diesen Laden nicht mehr gibt. Er bleibt „noch nicht bestätigt“, bis jemand ihn bestätigt.',
+        reportedThere: 'Am {date} hat jemand gemeldet, dass es diesen Laden gibt, obwohl Scout ihn als {status} gefunden hat. Scout prüft ihn erneut.',
+        statusWord: { closed: 'geschlossen', moved: 'umgezogen' },
+      },
+      tip: {
+        title: 'Kennst du einen Laden, den Scout übersehen hat?',
+        body: 'Erzähl Scout davon. Tipps werden wie jeder andere Hinweis geprüft, bevor sie in Ergebnissen erscheinen.',
+        name: 'Name des Ladens', where: 'Wo: Straße oder Gegend', what: 'Was es dort gibt', link: 'Link, optional: Website oder Instagram',
+        send: 'Tipp senden', thanks: 'Danke. Scout prüft ihn bei den nächsten Suchen.', another: 'Noch einen Tipp senden',
+        needName: 'Bitte gib den Namen des Ladens an.', needLink: 'Ein Link muss mit http:// oder https:// beginnen.',
+      },
       failed: 'Scout hat angehalten. {why}', langLabel: 'Switch language', other: 'EN',
     },
   };
@@ -112,6 +158,7 @@
   const plural = (forms, count, vars) => fill(forms[Number(count) === 1 ? 0 : 1], vars);
 
   const state = { lang: 'en', status: null, run: null, steps: [], shops: null, usage: null, busy: false,
+    fb: {}, tip: {},
     problem: null, picked: -1 };
   try { state.lang = localStorage.getItem('scout-lang') === 'de' ? 'de' : 'en'; } catch { /* private window */ }
   const t = () => T[state.lang];
@@ -435,7 +482,52 @@
     return out.length ? `<div class="tags">${out.join('')}</div>` : '';
   }
 
+  const day = (iso) => new Date(`${iso}T12:00:00`).toLocaleDateString(locale(), { day: 'numeric', month: 'long' });
+  const fbKey = (shop) => `${state.run?.id}|${shop.name}`;
+  let refs = {};   // form reference -> shop, rebuilt with every list
+
+  function notice(shop) {
+    const s = t().fb;
+    if (shop.reported_gone) return `<p class="notice">${fill(s.reportedGone, { date: day(shop.reported_gone) })}</p>`;
+    if (shop.reported_there) {
+      return `<p class="notice">${fill(s.reportedThere, { date: day(shop.reported_there), status: s.statusWord[shop.status] ?? shop.status })}</p>`;
+    }
+    return '';
+  }
+
+  function visitors(shop) {
+    const s = t().fb, v = shop.visitor_reports;
+    if (!v) return '';
+    const counts = [v.exists && plural(s.saysExists, v.exists, { n: v.exists }),
+      v.gone && plural(s.saysGone, v.gone, { n: v.gone })].filter(Boolean).join(' · ');
+    const notes = (v.notes ?? []).map((n) => `<blockquote class="vnote">${esc(n.text)}<small>${
+      fill(s.noteBy, { date: day(n.at) })}</small></blockquote>`).join('');
+    return `<div class="visitors"><div class="eyebrow">${esc(s.fromVisitors)}</div><p>${counts}</p>${notes}</div>`;
+  }
+
+  function feedbackForm(shop, ref) {
+    const s = t().fb, f = state.fb[fbKey(shop)] ?? {};
+    if (f.sent) return `<div class="fb" id="fb-${ref}"><p class="fb-done" role="status">${esc(s.thanks)}</p></div>`;
+    const note = f.choice ? `
+        <label class="eyebrow fb-label" for="fbn-${ref}">${esc(s.noteLabel)}</label>
+        <textarea id="fbn-${ref}" data-fb-note data-ref="${ref}" rows="2" maxlength="300" placeholder="${esc(s.placeholder)}">${esc(f.note ?? '')}</textarea>
+        <p class="fb-hint">${esc(s.hint)}</p>
+        ${f.error ? `<p class="fb-error" role="alert">${esc(f.error)}</p>` : ''}
+        <div class="actions">
+          <button type="button" class="btn primary" data-fb-send data-ref="${ref}"${f.busy ? ' disabled' : ''}>${esc(s.send)}</button>
+          <button type="button" class="btn outline" data-fb-cancel data-ref="${ref}">${esc(s.cancel)}</button>
+        </div>` : '';
+    return `<div class="fb" id="fb-${ref}">
+        <p class="fb-q" id="fbq-${ref}">${esc(s.question)}</p>
+        <div class="chips" role="group" aria-labelledby="fbq-${ref}">
+          <button type="button" class="chip" data-fb-choice="yes" data-ref="${ref}" aria-pressed="${f.choice === 'yes'}">${esc(s.yes)}</button>
+          <button type="button" class="chip" data-fb-choice="no" data-ref="${ref}" aria-pressed="${f.choice === 'no'}">${esc(s.no)}</button>
+        </div>${note}
+      </div>`;
+  }
+
   function card(shop, i) {
+    refs[`c${i}`] = shop;
     const s = t(), loc = shop.location, sure = shop.verdict === 'accept';
     const meta = [shop.district, s.visit[shop.storefront]].filter(Boolean).map(esc).join(' · ');
     let actions = '';
@@ -461,17 +553,23 @@
       <div class="meta">${meta}</div>
       ${badges(shop)}
       <p class="reason">${esc(shop.verdict_reason)}</p>
+      ${notice(shop)}
       ${facts(shop)}
       <div class="src">${sources(shop)}</div>
       ${actions}
+      ${visitors(shop)}
+      ${feedbackForm(shop, `c${i}`)}
     </article>`;
   }
 
-  function leftOut(shop) {
+  function leftOut(shop, j) {
+    refs[`l${j}`] = shop;
     return `<article class="card small">
       <h3 class="name">${esc(shop.name)}</h3>
       <p class="reason">${esc(shop.verdict_reason)}</p>
       <div class="src">${sources(shop)}</div>
+      ${visitors(shop)}
+      ${feedbackForm(shop, `l${j}`)}
     </article>`;
   }
 
@@ -494,6 +592,7 @@
       $('cards').innerHTML = state.busy ? '' : `<div class="empty-state"><div class="h">${esc(s.emptyH)}</div><div class="b">${esc(s.emptyB)}</div></div>`;
       return;
     }
+    refs = {};
     const shops = found(), rest = state.shops.filter((shop) => shop.verdict === 'reject');
     const sure = shops.filter((shop) => shop.verdict === 'accept').length;
     $('count').innerHTML = shops.length
@@ -517,6 +616,27 @@
     document.querySelectorAll('#cards > .card').forEach((el, j) => el.classList.toggle('on', j === i));
     map?.pick(i, centre);
     if (!centre) $(`shop-${i}`)?.scrollIntoView({ block: 'nearest' });
+  }
+
+  // Drawn only when needed, so a finished search never wipes what someone is typing.
+  function renderTip() {
+    const s = t().tip, f = state.tip;
+    const field = (name, label, max, type = 'text') => `<label class="eyebrow" for="tip-${name}">${esc(label)}</label>
+        <input id="tip-${name}" data-tip="${name}" type="${type}" maxlength="${max}" autocomplete="off" value="${esc(f[name] ?? '')}">`;
+    $('tip').innerHTML = f.sent ? `<h2 id="tip-title">${esc(s.title)}</h2>
+        <p class="fb-done" role="status">${esc(s.thanks)}</p>
+        <div class="actions"><button type="button" class="btn outline" id="tip-again">${esc(s.another)}</button></div>` : `
+      <h2 id="tip-title">${esc(s.title)}</h2>
+      <p class="tip-body">${esc(s.body)}</p>
+      <div class="tip-grid">
+        <div>${field('name', s.name, 80)}</div>
+        <div>${field('where', s.where, 80)}</div>
+        <div class="wide">${field('what', s.what, 200)}</div>
+        <div class="wide">${field('link', s.link, 300, 'url')}</div>
+      </div>
+      <p class="fb-hint">${esc(t().fb.hint)}</p>
+      ${f.error ? `<p class="fb-error" role="alert">${esc(f.error)}</p>` : ''}
+      <div class="actions"><button type="button" class="btn primary" id="tip-send"${f.busy ? ' disabled' : ''}>${esc(s.send)}</button></div>`;
   }
 
   function render() { renderStatic(); renderKeys(); renderRuns(); renderBanner(); renderSteps(); renderQueue(); }
@@ -544,6 +664,13 @@
         if (data) onEvent(kind, JSON.parse(data));
       }
     }
+  }
+
+  async function post(url, body) {
+    const res = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(data.error || res.statusText);
+    return data;
   }
 
   async function loadStatus() {
@@ -578,19 +705,81 @@
     state.lang = state.lang === 'en' ? 'de' : 'en';
     try { localStorage.setItem('scout-lang', state.lang); } catch { /* private window */ }
     render();
+    renderTip();
   });
   $('find').addEventListener('click', () => {
     const brief = $('brief').value.trim() || $('brief').placeholder;
     go('/api/find', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ brief }) });
   });
   $('replay').addEventListener('click', () => go('/api/replay?run=' + encodeURIComponent($('runs').value)));
-  $('cards').addEventListener('click', (event) => {
-    const button = event.target.closest('[data-show]');
-    if (!button) return;
-    pick(Number(button.dataset.show), true);
-    $('map').scrollIntoView({ block: 'nearest' });
+  const redrawForm = (ref) => { const el = $(`fb-${ref}`); if (el && refs[ref]) el.outerHTML = feedbackForm(refs[ref], ref); };
+
+  $('cards').addEventListener('click', async (event) => {
+    const show = event.target.closest('[data-show]');
+    if (show) {
+      pick(Number(show.dataset.show), true);
+      $('map').scrollIntoView({ block: 'nearest' });
+      return;
+    }
+    const el = event.target.closest('button[data-ref]');
+    const shop = el && refs[el.dataset.ref];
+    if (!shop || !state.run) return;
+    const ref = el.dataset.ref, key = fbKey(shop), f = (state.fb[key] = state.fb[key] ?? {});
+    if (el.dataset.fbChoice) {
+      Object.assign(f, { choice: el.dataset.fbChoice, error: null });
+      redrawForm(ref);
+      $(`fbn-${ref}`)?.focus();
+    } else if ('fbCancel' in el.dataset) {
+      state.fb[key] = {};
+      redrawForm(ref);
+    } else if ('fbSend' in el.dataset) {
+      Object.assign(f, { busy: true, error: null });
+      redrawForm(ref);
+      try {
+        const res = await post('/api/report', { run: state.run.id, shop: shop.name, exists: f.choice === 'yes', note: f.note ?? '' });
+        state.shops[state.shops.indexOf(shop)] = res.shop;
+        Object.assign(f, { sent: true, busy: false });
+        renderQueue();   // the report can move the shop between confirmed and not yet confirmed
+      } catch (e) {
+        Object.assign(f, { busy: false, error: e.message });
+        redrawForm(ref);
+      }
+    }
+  });
+  $('cards').addEventListener('input', (event) => {
+    const el = event.target.closest('[data-fb-note]');
+    const shop = el && refs[el.dataset.ref];
+    if (shop) (state.fb[fbKey(shop)] = state.fb[fbKey(shop)] ?? {}).note = el.value;
+  });
+  $('tip').addEventListener('input', (event) => {
+    const el = event.target.closest('[data-tip]');
+    if (el) state.tip[el.dataset.tip] = el.value;
+  });
+  $('tip').addEventListener('click', async (event) => {
+    if (event.target.closest('#tip-again')) { state.tip = {}; renderTip(); $('tip-name')?.focus(); return; }
+    if (!event.target.closest('#tip-send')) return;
+    const { name = '', where, what, link = '' } = state.tip, words = t().tip;
+    // The same checks as the server, said in the reader's language.
+    const missing = name.trim().length < 2 ? 'name'
+      : link.trim() && !/^https?:\/\/[^\s/]+\.[^\s/]+/i.test(link.trim()) ? 'link' : null;
+    if (missing) {
+      state.tip.error = missing === 'name' ? words.needName : words.needLink;
+      renderTip();
+      $(`tip-${missing}`)?.focus();
+      return;
+    }
+    Object.assign(state.tip, { busy: true, error: null });
+    renderTip();
+    try {
+      await post('/api/tip', { name, where, what, link });
+      state.tip = { sent: true };
+    } catch (e) {
+      Object.assign(state.tip, { busy: false, error: e.message });
+    }
+    renderTip();
   });
 
+  renderTip();
   loadStatus().then(() => {
     render();
     if (location.hash === '#sample') go('/api/replay?run=sample');
