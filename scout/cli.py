@@ -1,6 +1,6 @@
 """Scout — command line.
 
-  python3 scout/cli.py check                      are both keys working?            (3 small calls)
+  python3 scout/cli.py check                      are the keys and the map working? (5 small calls)
   python3 scout/cli.py find "BRIEF" [--seeds N]   research a brief, and N seeds from data/seeds.json
   python3 scout/cli.py verify [--limit N]         re-check the shops a person already judged, and score
   python3 scout/cli.py probe                      can Tavily see the registered shops' product pages?
@@ -13,6 +13,7 @@ from __future__ import annotations
 import argparse
 import json
 import sys
+import time
 import urllib.error
 from pathlib import Path
 
@@ -25,7 +26,14 @@ import store  # noqa: E402
 
 def print_step(event: dict) -> None:
     step = event["step"]
-    if step == "search":
+    if step == "baseline":
+        print(f"  plain    {event['query']!r}  ->  {len(event['results'])} results, for comparison")
+    elif step == "map":
+        where = f" around {event['near']}" if event.get("near") else ""
+        print(f"  map      {', '.join(event['words']) or 'all fashion shops'}{where}  ->  {event['found']} places")
+    elif step == "map_failed":
+        print(f"  map      failed: {event['reason']}")
+    elif step == "search":
         print(f"  search   {event['query']!r}  ->  {len(event['results'])} results")
     elif step == "read":
         print(f"  read     {event['url']}  ({event['via']}, {event['chars']} chars)")
@@ -39,6 +47,8 @@ def print_step(event: dict) -> None:
         print(f"  redo     records did not match the schema ({len(event['problems'])} problems)")
     elif step == "submit":
         print(f"  submit   {event['shops']} shops")
+    elif step == "located":
+        print(f"  located  {event['shops']} of {event['total']} on the map, {event['via_map']} from OpenStreetMap")
 
 
 def save(run_id: str, data: dict) -> None:
@@ -101,13 +111,26 @@ def check_tavily() -> bool:
     return bool(data.get("results"))
 
 
+def check_osm() -> bool:
+    import osm
+    started = time.monotonic()
+    found = osm.search(["afro", "abaya", "kimono"])
+    print(f"   Overpass: {found['found']} fashion places matching afro, abaya or kimono "
+          f"({time.monotonic() - started:.0f} s; answers are cached for a day)")
+    spot = osm.geocode("Alexanderplatz")
+    print(f"   Nominatim: Alexanderplatz is at {spot['lat']}, {spot['lon']}" if spot else "   ! Nominatim found nothing")
+    return bool(found["found"]) and bool(spot)
+
+
 def cmd_check(args) -> int:
+    import osm
     ok = True
-    for title, part in (("1. Nebius Token Factory", check_nebius), ("2. Tavily", check_tavily)):
+    for title, part in (("1. Nebius Token Factory", check_nebius), ("2. Tavily", check_tavily),
+                        ("3. OpenStreetMap (no key needed)", check_osm)):
         print(title)
         try:
             ok = part() and ok
-        except (clients.MissingKey, clients.ApiError) as e:
+        except (clients.MissingKey, clients.ApiError, osm.MapError) as e:
             print(f"   ! {e}")
             ok = False
         except urllib.error.URLError as e:
@@ -128,6 +151,10 @@ def cmd_find(args) -> int:
     save(run_id, {"brief": args.brief, "model": clients.nebius_model(), "checked_at": store.now(),
                   "usage": dict(clients.usage), **out})
     summary(out["shops"])
+    if out.get("baseline"):
+        found = [s for s in out["shops"] if s["verdict"] != "reject"]
+        missed = sum(1 for s in found if s["visibility"]["plain_search_rank"] is None)
+        print(f"{missed} of {len(found)} don't show up in a plain web search for {out['baseline']['query']!r}.")
     print(clients.cost_line())
     return 0
 
