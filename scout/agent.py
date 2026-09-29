@@ -7,7 +7,8 @@ the map when customers can visit it, and a source for every fact.
 
 The model decides what to look up. The code decides what it is allowed to do:
 
-- Map search goes to OpenStreetMap (osm.py), inside Berlin.
+- Map search goes to OpenStreetMap (osm.py), inside Berlin. With a key, Google Maps
+  (google_places.py) adds leads, but only place IDs are kept and never a pin.
 - Web search goes through Tavily, with marketplaces filtered out.
 - Reading a page goes through the engine's polite fetcher first: robots.txt is
   checked, requests are spaced, and the bot names itself. Tavily Extract is used
@@ -32,6 +33,7 @@ HERE = Path(__file__).parent
 sys.path.insert(0, str(HERE.parent / "engine"))
 
 import clients  # noqa: E402
+import google_places  # noqa: E402
 import osm  # noqa: E402
 import fetch  # noqa: E402  engine: polite HTTP, robots.txt, platform detection
 from llm import nullable, obj  # noqa: E402  engine: strict schema helpers
@@ -57,7 +59,7 @@ A shop is a match when it
 How to work:
 - Use map_search early. OpenStreetMap is kept up by people who live nearby and lists many shops \
 that have no website. Search for words that may be in a shop's name, in German, in English and in \
-the community's own language, and around the streets and squares where the community shops.
+the community's own language, and around the streets and squares where the community shops.{google}
 - Search the web in German first. Then search in the community's own language where that helps \
 (Turkish, Arabic, Persian, Russian, Vietnamese and others). Instagram pages and local listings count.
 - For every shop with a website, read the Impressum or the contact page to confirm the address. \
@@ -83,10 +85,18 @@ why in verdict_reason. A rejected shop is a useful finding too.
 When you are done, call submit_shops once, with one record per shop you checked."""
 
 
-def system_prompt(brief: str | None) -> str:
+GOOGLE_HOW = """
+- google_places searches Google Maps. Use it for shops that opened recently or are missing on \
+OpenStreetMap: owners often add a new shop to Google Maps first. Its results are leads. Confirm what \
+a shop sells from its own pages or another source when you can, and cite the Google Maps link for \
+anything only Google shows."""
+
+
+def system_prompt(brief: str | None, google: bool = False) -> str:
     """With a request, a match is what the person asked for. Without one, Culturalmaxxing's test."""
-    return SYSTEM.replace("{looking_for}", "what the person is looking for, or something clearly close to it"
-                          if brief else CULTURAL)
+    return (SYSTEM.replace("{looking_for}", "what the person is looking for, or something clearly close to it"
+                           if brief else CULTURAL)
+            .replace("{google}", GOOGLE_HOW if google else ""))
 
 SHOP = obj({
     "name": {"type": "string"},
@@ -134,6 +144,11 @@ TOOLS = [
           obj({"website": {"type": "string"}})),
     tool("submit_shops", "Submit the researched shops. Call once, at the end.", SUBMIT),
 ]
+GOOGLE_TOOL = tool("google_places", "Search Google Maps for shops in Berlin. Good for shops that opened recently "
+                                    "or are missing on OpenStreetMap. Give a short search text in any language, "
+                                    "such as 'hanbok Berlin' or 'gelinlik Neukölln'. Returns up to 20 places with "
+                                    "name, address, whether Google lists the place as open or closed, and a Google "
+                                    "Maps link.", obj({"query": {"type": "string"}}))
 FORCE_SUBMIT = {"type": "function", "function": {"name": "submit_shops"}}
 FATAL = (401, 403, 432, 433)   # bad key or plan limit: stop, do not let the model work around it
 
@@ -193,11 +208,14 @@ def same_shop(place: dict, shop: dict, cited: bool) -> bool:
 class Session:
     """One agent run: its budgets, the pages it was shown, and the event log."""
 
-    def __init__(self, max_searches: int, max_reads: int, max_maps: int = 6, log=None):
+    def __init__(self, max_searches: int, max_reads: int, max_maps: int = 6, max_google: int = 0, log=None):
         self.left = {"map_search": max_maps, "web_search": max_searches, "read_page": max_reads,
                      "check_platform": max_reads}
+        if max_google:
+            self.left["google_places"] = max_google
         self.seen: set[str] = set()
         self.places: dict[str, dict] = {}
+        self.google: dict[str, dict] = {}   # place ID -> place, for this run only; never saved
         self.blocked_hosts: set[str] = set()
         self.log = log or (lambda event: None)
 
@@ -210,6 +228,8 @@ class Session:
         try:
             if name == "map_search":
                 return self.map_search(args["words"], args.get("near"))
+            if name == "google_places":
+                return self.google_places(str(args["query"]))
             if name == "web_search":
                 return self.web_search(str(args["query"]))
             if name == "read_page":
@@ -220,6 +240,9 @@ class Session:
         except osm.MapError as e:
             self.log({"step": "map_failed", "reason": str(e)[:200]})
             return {"error": f"the map search failed ({e}); use web_search instead"}
+        except google_places.GoogleError as e:
+            self.log({"step": "google_failed", "reason": str(e)[:200]})
+            return {"error": f"Google Maps did not answer ({e}); use map_search and web_search instead"}
         except clients.ApiError as e:
             if e.status in FATAL:
                 raise
@@ -241,6 +264,18 @@ class Session:
             note += (f" These are the {len(found['places'])} nearest of {found['found']}; add words to narrow it down."
                      if near else f" These are {len(found['places'])} of {found['found']}; use more specific words.")
         return dict(found, note=note)
+
+    def google_places(self, query: str) -> dict:
+        found = google_places.search(query)
+        if "error" in found:
+            return found
+        for p in found["places"]:
+            self.google[p["place_id"]] = p
+        # Only place IDs go into the log: Google's other content may not be stored.
+        self.log({"step": "google", "query": query, "found": found["found"],
+                  "place_ids": [p["place_id"] for p in found["places"]]})
+        return dict(found, note="Google Maps results are leads. Confirm what a shop sells from its own pages "
+                                "or another source when you can.")
 
     def web_search(self, query: str) -> dict:
         data = clients.search(query, exclude_domains=clients.MARKETPLACES)
@@ -299,6 +334,9 @@ class Session:
                 "has_product_feed": platform in ("shopify", "woocommerce")}
 
     def was_shown(self, source: str) -> bool:
+        place_id = google_places.place_id_of(source)
+        if place_id is not None:
+            return place_id in self.google
         n = norm(source)
         if n in self.seen:
             return True
@@ -327,7 +365,13 @@ class Session:
                 except OSError:
                     crawl = None
         location = None if shop["verdict"] == "reject" else self.locate(shop)
+        if any(google_places.place_id_of(s) for s in sources) and not self.backed(shop):
+            shop["address_as_published"] = None   # known only from Google: not ours to store or show
         return dict(shop, crawl=crawl, unseen_sources=unseen, flags=flags, location=location)
+
+    def backed(self, shop: dict) -> bool:
+        """Does a traced source other than Google back this record?"""
+        return any(self.was_shown(s) and google_places.place_id_of(s) is None for s in shop.get("sources") or [])
 
     def locate(self, shop: dict) -> dict | None:
         """Where customers can find the shop, from the code's own lookups. None if it is not a place to visit."""
@@ -338,13 +382,23 @@ class Session:
             if same_shop(p, shop, cited=p in cited):
                 return {"lat": p["lat"], "lon": p["lon"], "via": "openstreetmap", "osm_url": p["osm_url"],
                         "mapped_name": p["name"], "opening_hours": p.get("opening_hours")}
-        if shop.get("storefront") == "yes" and shop.get("in_berlin") == "yes" and shop.get("address_as_published"):
+        # An address is placed on the map only when a page or map entry other than Google backs
+        # the record: an address known only from Google may not be drawn on a non-Google map.
+        sources = shop.get("sources") or []
+        if self.backed(shop) and shop.get("storefront") == "yes" and shop.get("in_berlin") == "yes" \
+                and shop.get("address_as_published"):
             try:
                 hit = osm.geocode(shop["address_as_published"])
             except osm.MapError:
                 hit = None
             if hit:
                 return {"lat": hit["lat"], "lon": hit["lon"], "via": "address", "osm_url": None,
+                        "mapped_name": None, "opening_hours": None}
+        for s in sources:
+            p = self.google.get(google_places.place_id_of(s) or "")
+            if p and same_shop(p, shop, cited=True):
+                # A link to Google Maps, not a pin: no coordinates from Google, only the place ID.
+                return {"lat": None, "lon": None, "via": "google", "place_id": p["place_id"], "osm_url": None,
                         "mapped_name": None, "opening_hours": None}
         return None
 
@@ -360,16 +414,17 @@ def _assistant(msg: dict, calls: list[dict]) -> dict:
                            for c in calls]}
 
 
-def run(prompt: str, *, system: str | None = None, max_rounds: int = 24, max_searches: int = 16,
-        max_reads: int = 16, max_maps: int = 6, log=None) -> dict:
+def run(prompt: str, *, system: str | None = None, tools: list[dict] | None = None, max_rounds: int = 24,
+        max_searches: int = 16, max_reads: int = 16, max_maps: int = 6, max_google: int = 0, log=None) -> dict:
     """Let the model research until it submits records that pass the schema."""
-    session = Session(max_searches, max_reads, max_maps, log)
+    session = Session(max_searches, max_reads, max_maps, max_google, log)
+    tools = tools or TOOLS
     messages: list[dict] = [{"role": "system", "content": system or system_prompt(None)},
                             {"role": "user", "content": prompt}]
     force = False
     for round_no in range(1, max_rounds + 3):      # two spare rounds to repair a bad submit
         force = force or round_no >= max_rounds
-        data = clients.chat(messages, tools=TOOLS, tool_choice=FORCE_SUBMIT if force else "auto",
+        data = clients.chat(messages, tools=tools, tool_choice=FORCE_SUBMIT if force else "auto",
                             max_tokens=6000)
         msg = data["choices"][0]["message"]
         calls = msg.get("tool_calls") or []
@@ -392,7 +447,8 @@ def run(prompt: str, *, system: str | None = None, max_rounds: int = 24, max_sea
                     session.log({"step": "submit", "shops": len(shops)})
                     placed = [s for s in shops if s["location"]]
                     session.log({"step": "located", "shops": len(placed), "total": len(shops),
-                                 "via_map": sum(1 for s in placed if s["location"]["via"] == "openstreetmap")})
+                                 "via_map": sum(1 for s in placed if s["location"]["via"] == "openstreetmap"),
+                                 "via_google": sum(1 for s in placed if s["location"]["via"] == "google")})
                     return {"shops": shops, "rounds": round_no,
                             "blocked_hosts": sorted(session.blocked_hosts)}
                 result = {"error": "the records did not match the schema", "problems": errors[:12]}
@@ -451,11 +507,14 @@ def research(candidates: list[dict], brief: str | None = None, extra: int = 6, l
     parts.append("When you are done, call submit_shops with one record per shop.")
     baseline = plain_search(brief, log) if brief else None
     n = len(candidates)
-    out = run("\n\n".join(parts), system=system_prompt(brief), log=log,
+    google = google_places.enabled()
+    out = run("\n\n".join(parts), system=system_prompt(brief, google), log=log,
+              tools=TOOLS[:1] + [GOOGLE_TOOL] + TOOLS[1:] if google else TOOLS,
               max_rounds=6 * n + (12 if brief else 4),
               max_searches=3 * n + (8 if brief else 1),
               max_reads=3 * n + (8 if brief else 1),
-              max_maps=2 * n + (6 if brief else 1))
+              max_maps=2 * n + (6 if brief else 1),
+              max_google=n + (4 if brief else 1) if google else 0)
     if baseline is not None:
         for shop in out["shops"]:
             shop["visibility"] = visibility(shop, baseline)

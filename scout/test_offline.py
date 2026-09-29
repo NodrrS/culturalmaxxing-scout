@@ -2,7 +2,7 @@
 
   python3 scout/test_offline.py
 
-Nebius, Tavily, OpenStreetMap and the engine's fetcher are replaced by scripted stand-ins, so
+Nebius, Tavily, OpenStreetMap, Google Maps and the engine's fetcher are replaced by scripted stand-ins, so
 these tests show that the code does what it should with the answers it gets.
 They do not show that the live services answer in that shape: `cli.py check`
 does that.
@@ -27,6 +27,7 @@ sys.path.insert(0, str(HERE))
 import agent  # noqa: E402
 import clients  # noqa: E402
 import cli  # noqa: E402
+import google_places  # noqa: E402
 import listing  # noqa: E402
 import osm  # noqa: E402
 import server  # noqa: E402
@@ -35,7 +36,8 @@ import store  # noqa: E402
 
 os.environ["NEBIUS_API_KEY"] = "test-key"
 os.environ["TAVILY_API_KEY"] = "test-key"
-os.environ.pop("CMX_BOT_CONTACT", None)
+for name in ("CMX_BOT_CONTACT", "GOOGLE_MAPS_API_KEY", "NEBIUS_ZERO_DATA_RETENTION"):
+    os.environ.pop(name, None)
 MAP_CACHE = tempfile.TemporaryDirectory()
 
 
@@ -705,6 +707,135 @@ def test_a_plain_search_shows_which_shops_it_would_miss():
     assert "sells what the person is looking for" in first[0]["content"]
     assert "looking for: evening wear" in first[1]["content"]
     assert agent.CULTURAL in agent.system_prompt(None)             # verify keeps Culturalmaxxing's test
+
+# ---- Google Maps -----------------------------------------------------------------
+
+class FakeGoogle:
+    """Scripted answers for the Places API (New) Text Search."""
+
+    def __init__(self, places=(), status=200):
+        self.places, self.status, self.requests = list(places), status, []
+
+    def __call__(self, url, body, headers, timeout):
+        self.requests.append((url, json.loads(body), dict(headers)))
+        if self.status != 200:
+            return self.status, json.dumps({"error": {"message": "Quota exceeded for this key."}})
+        return 200, json.dumps({"places": self.places})
+
+
+def gplace(i, name, address, status="OPERATIONAL"):
+    return {"id": f"ChIJ-test-{i}", "displayName": {"text": name, "languageCode": "de"},
+            "formattedAddress": address, "businessStatus": status, "primaryType": "clothing_store",
+            "types": ["clothing_store", "store"]}
+
+
+LADEN_NEU = gplace(1, "Laden Neu", "Neue Straße 5, 12043 Berlin, Deutschland")
+
+
+class google_on:
+    """GOOGLE_MAPS_API_KEY set, and the operator's word that Nebius keeps no data."""
+
+    def __init__(self, fake, zero_retention=True):
+        self.fake, self.zero_retention = fake, zero_retention
+
+    def __enter__(self):
+        google_places.transport = self.fake
+        os.environ["GOOGLE_MAPS_API_KEY"] = "demo-key"
+        if self.zero_retention:
+            os.environ["NEBIUS_ZERO_DATA_RETENTION"] = "on"
+        return self.fake
+
+    def __exit__(self, *exc):
+        os.environ.pop("GOOGLE_MAPS_API_KEY", None)
+        os.environ.pop("NEBIUS_ZERO_DATA_RETENTION", None)
+
+
+def test_google_asks_only_for_pro_fields_inside_berlin():
+    with google_on(FakeGoogle([LADEN_NEU, {"id": "ChIJ-nameless"}])) as fake:
+        found = google_places.search("  hanbok\n Berlin  ")
+    url, body, headers = fake.requests[0]
+    assert url == "https://places.googleapis.com/v1/places:searchText" and headers["X-Goog-Api-Key"] == "demo-key"
+    fields = set(headers["X-Goog-FieldMask"].split(","))
+    assert fields == {"places.id", "places.displayName", "places.formattedAddress", "places.businessStatus",
+                      "places.primaryType", "places.types"}              # Pro only: no website, hours or location
+    assert body["textQuery"] == "hanbok Berlin" and body["pageSize"] == 20 and body["regionCode"] == "DE"
+    box = body["locationRestriction"]["rectangle"]
+    assert (box["low"]["latitude"], box["low"]["longitude"], box["high"]["latitude"], box["high"]["longitude"]) \
+        == osm.BERLIN
+    assert found["found"] == 1                                             # the nameless place is left out
+    shop = found["places"][0]
+    assert (shop["name"], shop["status"], shop["kind"]) == ("Laden Neu", "open", "clothing_store")
+    assert shop["maps_url"] == ("https://www.google.com/maps/search/?api=1&query=Google"
+                                "&query_place_id=ChIJ-test-1")                 # built from the place ID alone
+    assert "lat" not in shop and "location" not in json.dumps(found)
+
+
+def test_google_answers_are_never_cached():
+    with google_on(FakeGoogle([LADEN_NEU])) as fake:
+        google_places.search("abaya Neukölln")
+        google_places.search("abaya Neukölln")
+    assert len(fake.requests) == 2
+
+
+def test_place_ids_are_read_only_from_our_own_links():
+    assert google_places.place_id_of(google_places.maps_link("ChIJ-x")) == "ChIJ-x"
+    assert google_places.place_id_of("https://maps.google.com/?cid=123") is None
+    assert google_places.place_id_of("https://example.org/maps?query_place_id=ChIJ-x") is None
+    assert google_places.place_id_of("https://www.modehaus-beispiel.example/impressum") is None
+
+
+def test_google_is_offered_only_with_a_key_and_zero_retention():
+    site()
+    submit = calls(("submit_shops", {"shops": [record(verdict="revisit", sources=[])]}))
+    for zero_retention, offered in ((False, False), (True, True)):
+        fake = use(Fake(chat=[submit]))
+        with google_on(FakeGoogle(), zero_retention=zero_retention):
+            agent.research([{"name": "Modehaus Beispiel"}])
+        sent = fake.asked("/chat/completions")[0]
+        names = [t["function"]["name"] for t in sent["tools"]]
+        assert ("google_places" in names) is offered, names
+        assert ("google_places searches Google Maps" in sent["messages"][0]["content"]) is offered
+        if offered:
+            assert names[:2] == ["map_search", "google_places"]
+    fake = use(Fake(chat=[submit]))
+    agent.research([{"name": "Modehaus Beispiel"}])                        # no key at all
+    assert "google_places" not in [t["function"]["name"] for t in fake.asked("/chat/completions")[0]["tools"]]
+
+
+def test_a_google_place_is_a_traced_source_and_a_link_not_a_pin():
+    site()
+    link = google_places.maps_link("ChIJ-test-1")
+    events = []
+    maps = FakeMap(geocoded=PLATZ)
+    fake = use(Fake(chat=[calls(("google_places", {"query": "Laden Neu Berlin"})),
+                          calls(("submit_shops", {"shops": [record(
+                              name="Laden Neu", website=None, platform="none", has_online_shop="no",
+                              address_as_published="Neue Straße 5, 12043 Berlin", sources=[link])]}))]), maps)
+    with google_on(FakeGoogle([LADEN_NEU])):
+        shop = agent.research([{"name": "Laden Neu"}], log=events.append)["shops"][0]
+    assert shop["verdict"] == "accept" and shop["flags"] == []            # the Google link counts as traced
+    assert shop["location"] == {"lat": None, "lon": None, "via": "google", "place_id": "ChIJ-test-1",
+                                "osm_url": None, "mapped_name": None, "opening_hours": None}
+    assert maps.nominatim() == []                     # an address known only from Google is not put on the map
+    assert shop["address_as_published"] is None       # ...and not stored either
+    step = next(e for e in events if e["step"] == "google")
+    assert step["place_ids"] == ["ChIJ-test-1"] and step["found"] == 1
+    assert "Laden Neu" not in json.dumps(step["place_ids"]) and "Neue Straße" not in json.dumps(step)
+    assert events[-1]["step"] == "located" and events[-1]["via_google"] == 1
+    told = json.loads(fake.asked("/chat/completions")[1]["messages"][-1]["content"])
+    assert told["places"][0]["maps_url"] == link and "leads" in told["note"]
+
+
+def test_a_google_failure_is_reported_and_the_run_goes_on():
+    site()
+    events = []
+    fake = use(Fake(chat=[calls(("google_places", {"query": "abaya Berlin"})),
+                          calls(("submit_shops", {"shops": [record(verdict="revisit", sources=[])]}))]))
+    with google_on(FakeGoogle(status=429)):
+        agent.research([{"name": "Modehaus Beispiel"}], log=events.append)
+    told = json.loads(fake.asked("/chat/completions")[1]["messages"][-1]["content"])
+    assert "daily limit" in told["error"] and "map_search and web_search" in told["error"]
+    assert events[0]["step"] == "google_failed"
 
 if __name__ == "__main__":
     tests = [(n, f) for n, f in sorted(globals().items()) if n.startswith("test_") and callable(f)]

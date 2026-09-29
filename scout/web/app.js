@@ -12,8 +12,9 @@
       find: 'Find shops', finding: 'Scout is searching', recorded: 'Recorded searches', replay: 'Replay',
       sampleOption: 'Sample search (invented shops)',
       logLabel: 'What Scout is doing', queueLabel: 'Shops',
-      foot: 'Scout runs on NVIDIA Nemotron through Nebius Token Factory and searches with Tavily and OpenStreetMap. It checks robots.txt before it reads a page and records business contact details only.',
-      keysOk: 'Model: {model}. Search: Tavily and OpenStreetMap.',
+      foot: 'Scout runs on NVIDIA Nemotron through Nebius Token Factory and searches with Tavily and OpenStreetMap, and with Google Maps when a key is set. It checks robots.txt before it reads a page and records business contact details only.',
+      keysOk: 'Model: {model}. Search: {sources}.', searchTwo: 'Tavily and OpenStreetMap', searchThree: 'Tavily, OpenStreetMap and Google Maps',
+      googleOff: 'Google Maps is set up but stays off until Zero Data Retention is on in Nebius and NEBIUS_ZERO_DATA_RETENTION=on is in scout/.env.',
       keysMissing: 'Keys are missing: {names}. Put them in scout/.env and start Scout again. The sample search works without them.',
       contactMissing: 'Set CMX_BOT_CONTACT in scout/.env so the sites and maps Scout reads can see who is asking.',
       stepsEmpty: 'No steps yet.', emptyH: 'No search yet.',
@@ -25,14 +26,16 @@
       hidden: ['{h} of {n} does not show up in a plain web search for this.', '{h} of {n} don’t show up in a plain web search for this.'],
       cost: '{searches} web searches, {maps} map searches and {reads} pages read. {credits} Tavily credits, {tokens} tokens through Nemotron.',
       verdict: { accept: 'Confirmed', revisit: 'Not yet confirmed', reject: 'Left out' },
-      step: { baseline: 'Plain search', map: 'Map', map_failed: 'Map', search: 'Search', read: 'Read', blocked: 'Stayed out', read_failed: 'No answer', platform: 'Online shop', submit_rejected: 'Sent back', submit: 'Done', located: 'On the map' },
+      step: { baseline: 'Plain search', map: 'Map', map_failed: 'Map', google: 'Google Maps', google_failed: 'Google Maps', search: 'Search', read: 'Read', blocked: 'Stayed out', read_failed: 'No answer', platform: 'Online shop', submit_rejected: 'Sent back', submit: 'Done', located: 'On the map' },
       results: ['{n} result', '{n} results'], forComparison: 'for comparison',
       places: ['{n} place on OpenStreetMap', '{n} places on OpenStreetMap'], around: 'around {place}',
       allFashion: 'all fashion shops', mapFailed: 'the map servers were busy',
       viaTavily: 'rendered through Tavily', viaOwn: 'read by our own fetcher',
       robots: 'robots.txt asks crawlers to stay out', feedYes: 'online shop on {p}', feedNo: 'no online shop feed',
       sentBack: ['{n} value outside the vocabulary', '{n} values outside the vocabulary'], submitted: ['{n} shop checked', '{n} shops checked'], chars: '{n} characters',
-      located: '{k} of {n} shops', locatedMap: '{m} from OpenStreetMap', locatedAddress: '{a} from their address',
+      located: '{k} of {n} shops', locatedMap: '{m} from OpenStreetMap', locatedAddress: '{a} from their address', locatedGoogle: '{g} as a Google Maps link',
+      googlePlaces: ['{n} place on Google Maps', '{n} places on Google Maps'], googleFailed: 'Google Maps did not answer',
+      googleOnly: 'Found on Google Maps. Places from Google are not drawn on this map.',
       facts: { website: 'Website', sells: 'Sells', address: 'Address', hours: 'Opening hours', status: 'Status', contact: 'Best way in', channels: 'Channels', languages: 'Languages' },
       hoursNote: 'as mapped on OpenStreetMap',
       status: { trading: 'Trading', closed: 'Closed', moved: 'Moved', unclear: 'Unclear' },
@@ -42,7 +45,7 @@
       sourcesLabel: 'Sources', traced: 'Traced', notTraced: '[Not traced]', noSources: '[No source given]',
       untraced: '[{u} of {n} sources not traced]', crawlNo: '[robots.txt: Scout did not read this site]',
       onMap: 'On OpenStreetMap',
-      actions: { directions: 'Directions', show: 'Show on map' },
+      actions: { directions: 'Directions', show: 'Show on map', google: 'Open in Google Maps' },
       leftOut: ['Checked and left out: {n} shop', 'Checked and left out: {n} shops'],
       map: { label: 'Map of the shops found. Use the arrow keys to move it.', zoomIn: 'Zoom in', zoomOut: 'Zoom out', none: 'None of these shops has a confirmed place to visit yet.', credit: '© OpenStreetMap contributors' },
       culture: { african: 'African', central_asian: 'Central Asian', south_asian: 'South Asian', middle_eastern: 'Middle Eastern', east_asian: 'East Asian', balkan: 'Balkan', latin_american: 'Latin American', modest: 'Modest', fusion: 'Fusion' },
@@ -55,8 +58,9 @@
       find: 'Läden finden', finding: 'Scout sucht', recorded: 'Aufgezeichnete Suchen', replay: 'Abspielen',
       sampleOption: 'Beispielsuche (erfundene Läden)',
       logLabel: 'Was Scout gerade tut', queueLabel: 'Läden',
-      foot: 'Scout läuft mit NVIDIA Nemotron über Nebius Token Factory und sucht mit Tavily und OpenStreetMap. Vor dem Lesen einer Seite prüft Scout die robots.txt und erfasst nur geschäftliche Kontaktdaten.',
-      keysOk: 'Modell: {model}. Suche: Tavily und OpenStreetMap.',
+      foot: 'Scout läuft mit NVIDIA Nemotron über Nebius Token Factory und sucht mit Tavily und OpenStreetMap, mit einem Schlüssel auch in Google Maps. Vor dem Lesen einer Seite prüft Scout die robots.txt und erfasst nur geschäftliche Kontaktdaten.',
+      keysOk: 'Modell: {model}. Suche: {sources}.', searchTwo: 'Tavily und OpenStreetMap', searchThree: 'Tavily, OpenStreetMap und Google Maps',
+      googleOff: 'Google Maps ist eingerichtet, bleibt aber aus, bis Zero Data Retention in Nebius eingeschaltet ist und NEBIUS_ZERO_DATA_RETENTION=on in scout/.env steht.',
       keysMissing: 'Es fehlen Schlüssel: {names}. Trage sie in scout/.env ein und starte Scout neu. Die Beispielsuche funktioniert ohne sie.',
       contactMissing: 'Trage CMX_BOT_CONTACT in scout/.env ein, damit die Seiten und Karten, die Scout liest, sehen, wer fragt.',
       stepsEmpty: 'Noch keine Schritte.', emptyH: 'Noch keine Suche.',
@@ -68,14 +72,16 @@
       hidden: ['{h} von {n} taucht in einer normalen Websuche danach nicht auf.', '{h} von {n} tauchen in einer normalen Websuche danach nicht auf.'],
       cost: '{searches} Websuchen, {maps} Kartensuchen und {reads} gelesene Seiten. {credits} Tavily-Credits, {tokens} Tokens über Nemotron.',
       verdict: { accept: 'Bestätigt', revisit: 'Noch nicht bestätigt', reject: 'Aussortiert' },
-      step: { baseline: 'Normale Suche', map: 'Karte', map_failed: 'Karte', search: 'Suche', read: 'Gelesen', blocked: 'Draußen', read_failed: 'Keine Antwort', platform: 'Onlineshop', submit_rejected: 'Zurück', submit: 'Fertig', located: 'Auf der Karte' },
+      step: { baseline: 'Normale Suche', map: 'Karte', map_failed: 'Karte', google: 'Google Maps', google_failed: 'Google Maps', search: 'Suche', read: 'Gelesen', blocked: 'Draußen', read_failed: 'Keine Antwort', platform: 'Onlineshop', submit_rejected: 'Zurück', submit: 'Fertig', located: 'Auf der Karte' },
       results: ['{n} Treffer', '{n} Treffer'], forComparison: 'zum Vergleich',
       places: ['{n} Ort auf OpenStreetMap', '{n} Orte auf OpenStreetMap'], around: 'rund um {place}',
       allFashion: 'alle Modeläden', mapFailed: 'die Kartenserver waren ausgelastet',
       viaTavily: 'über Tavily gerendert', viaOwn: 'mit unserem eigenen Abruf gelesen',
       robots: 'robots.txt bittet Crawler, draußen zu bleiben', feedYes: 'Onlineshop auf {p}', feedNo: 'kein Onlineshop-Feed',
       sentBack: ['{n} Wert außerhalb des Vokabulars', '{n} Werte außerhalb des Vokabulars'], submitted: ['{n} Laden geprüft', '{n} Läden geprüft'], chars: '{n} Zeichen',
-      located: '{k} von {n} Läden', locatedMap: '{m} über OpenStreetMap', locatedAddress: '{a} über ihre Adresse',
+      located: '{k} von {n} Läden', locatedMap: '{m} über OpenStreetMap', locatedAddress: '{a} über ihre Adresse', locatedGoogle: '{g} als Google-Maps-Link',
+      googlePlaces: ['{n} Ort auf Google Maps', '{n} Orte auf Google Maps'], googleFailed: 'Google Maps hat nicht geantwortet',
+      googleOnly: 'Auf Google Maps gefunden. Orte von Google erscheinen nicht auf dieser Karte.',
       facts: { website: 'Website', sells: 'Sortiment', address: 'Adresse', hours: 'Öffnungszeiten', status: 'Status', contact: 'Am besten', channels: 'Kanäle', languages: 'Sprachen' },
       hoursNote: 'laut OpenStreetMap',
       status: { trading: 'In Betrieb', closed: 'Geschlossen', moved: 'Umgezogen', unclear: 'Unklar' },
@@ -85,7 +91,7 @@
       sourcesLabel: 'Quellen', traced: 'Nachvollzogen', notTraced: '[Nicht nachvollzogen]', noSources: '[Keine Quelle angegeben]',
       untraced: '[{u} von {n} Quellen nicht nachvollzogen]', crawlNo: '[robots.txt: Scout hat diese Seite nicht gelesen]',
       onMap: 'Auf OpenStreetMap',
-      actions: { directions: 'Route', show: 'Auf der Karte zeigen' },
+      actions: { directions: 'Route', show: 'Auf der Karte zeigen', google: 'In Google Maps öffnen' },
       leftOut: ['Geprüft und aussortiert: {n} Laden', 'Geprüft und aussortiert: {n} Läden'],
       map: { label: 'Karte der gefundenen Läden. Mit den Pfeiltasten verschieben.', zoomIn: 'Vergrößern', zoomOut: 'Verkleinern', none: 'Für keinen dieser Läden ist schon ein Ort zum Besuchen bestätigt.', credit: '© OpenStreetMap-Mitwirkende' },
       culture: { african: 'Afrikanisch', central_asian: 'Zentralasiatisch', south_asian: 'Südasiatisch', middle_eastern: 'Nahöstlich', east_asian: 'Ostasiatisch', balkan: 'Balkan', latin_american: 'Lateinamerikanisch', modest: 'Modest', fusion: 'Fusion' },
@@ -132,6 +138,10 @@
       : `<span>${text}</span>`;
   }
   const coord = (n) => Number(n).toFixed(5);
+  const googleLink = (placeId, label) => 'https://www.google.com/maps/search/?api=1&query='
+    + encodeURIComponent(label || 'Google') + '&query_place_id=' + encodeURIComponent(placeId);
+  const isGoogle = (url) => { const u = safeUrl(url); return !!u && u.hostname.replace(/^www\./, '') === 'google.com'
+    && u.pathname.startsWith('/maps') && u.searchParams.has('query_place_id'); };
 
   function shape(culture) {
     const s = SHAPE[culture];
@@ -311,7 +321,8 @@
     const missing = [!st.nebius_key && 'NEBIUS_API_KEY', !st.tavily_key && 'TAVILY_API_KEY'].filter(Boolean);
     let html = missing.length
       ? fill(s.keysMissing, { names: missing.join(', ') }).replace(/scout\/\.env/, '<code>scout/.env</code>')
-      : fill(s.keysOk, { model: st.model });
+      : fill(s.keysOk, { model: st.model, sources: st.google ? s.searchThree : s.searchTwo });
+    if (!missing.length && st.google_key && !st.google) html += ' ' + esc(s.googleOff).replace(/scout\/\.env/, '<code>scout/.env</code>');
     if (!st.bot_contact) html += ' ' + esc(s.contactMissing).replace(/scout\/\.env/, '<code>scout/.env</code>');
     $('keys').innerHTML = html;
     $('find').disabled = state.busy || missing.length > 0;
@@ -348,6 +359,8 @@
       const where = e.near ? fill(s.around, { place: e.near }) + ' · ' : '';
       value = `${words}<small>${where}${plural(s.places, e.found, { n: num(e.found) })}</small>`;
     } else if (e.step === 'map_failed') value = esc(s.mapFailed);
+    else if (e.step === 'google') value = `<q>${esc(e.query)}</q><small>${plural(s.googlePlaces, e.found, { n: num(e.found) })}</small>`;
+    else if (e.step === 'google_failed') value = esc(s.googleFailed);
     else if (e.step === 'search') value = `<q>${esc(e.query)}</q><small>${plural(s.results, e.results?.length, { n: e.results?.length ?? 0 })}</small>`;
     else if (e.step === 'read') value = `${short(e.url)}<small>${esc(e.via === 'tavily_extract' ? s.viaTavily : s.viaOwn)} · ${fill(s.chars, { n: num(e.chars) })}</small>`;
     else if (e.step === 'blocked') value = `${short(e.url)}<small>${esc(s.robots)}</small>`;
@@ -356,8 +369,9 @@
     else if (e.step === 'submit_rejected') value = plural(s.sentBack, e.problems?.length, { n: e.problems?.length ?? 0 });
     else if (e.step === 'submit') value = plural(s.submitted, e.shops, { n: e.shops });
     else if (e.step === 'located') {
-      const via = [e.via_map && fill(s.locatedMap, { m: e.via_map }),
-        e.shops - e.via_map && fill(s.locatedAddress, { a: e.shops - e.via_map })].filter(Boolean).join(', ');
+      const google = e.via_google || 0, address = e.shops - e.via_map - google;
+      const via = [e.via_map && fill(s.locatedMap, { m: e.via_map }), address && fill(s.locatedAddress, { a: address }),
+        google && fill(s.locatedGoogle, { g: google })].filter(Boolean).join(', ');
       value = `${fill(s.located, { k: e.shops, n: e.total })}${via ? `<small>${via}</small>` : ''}`;
     }
     return `<li><span class="k">${esc(label)}</span><span class="v">${value}</span></li>`;
@@ -399,7 +413,7 @@
     if (!list.length) flags.push(esc(s.noSources));
     else if (unseen.size) flags.push(fill(s.untraced, { u: unseen.size, n: list.length }));
     if (shop.crawl === false) flags.push(esc(s.crawlNo));
-    const rows = list.map((src) => `<li>${link(src)}<span class="mark${unseen.has(src) ? ' warn' : ''}">${
+    const rows = list.map((src) => `<li>${isGoogle(src) ? link(googleLink(new URL(src).searchParams.get('query_place_id'), shop.name), 'Google Maps') : link(src)}<span class="mark${unseen.has(src) ? ' warn' : ''}">${
       esc(unseen.has(src) ? s.notTraced : s.traced)}</span></li>`);
     if (shop.location?.osm_url && !list.includes(shop.location.osm_url)) {
       rows.push(`<li>${link(shop.location.osm_url, esc(s.onMap))}<span class="mark">${esc(s.traced)}</span></li>`);
@@ -424,10 +438,21 @@
   function card(shop, i) {
     const s = t(), loc = shop.location, sure = shop.verdict === 'accept';
     const meta = [shop.district, s.visit[shop.storefront]].filter(Boolean).map(esc).join(' · ');
-    const actions = loc ? `<div class="actions">
+    let actions = '';
+    if (loc?.via === 'google' && loc.place_id) {
+      // Google's rules for its content outside a Google map: credit "Google Maps" in the same box,
+      // set the box apart from the rest, and link to Google Maps.
+      actions = `<div class="gmaps">
+        <p>${esc(s.googleOnly)}</p>
+        <div class="actions">${link(googleLink(loc.place_id, shop.name), esc(s.actions.google), 'btn primary')}</div>
+        <span class="gattr">Google Maps</span>
+      </div>`;
+    } else if (loc && loc.lat != null) {
+      actions = `<div class="actions">
         <a class="btn primary" href="https://www.openstreetmap.org/directions?to=${coord(loc.lat)}%2C${coord(loc.lon)}" target="_blank" rel="noopener noreferrer">${esc(s.actions.directions)}</a>
         <button class="btn outline" type="button" data-show="${i}">${esc(s.actions.show)}</button>
-      </div>` : '';
+      </div>`;
+    }
     return `<article class="card${i === state.picked ? ' on' : ''}" id="shop-${i}">
       <div class="card-top">
         <h2 class="name"><span class="num${sure ? '' : ' unsure'}" aria-hidden="true">${i + 1}</span>${esc(shop.name)}</h2>
@@ -480,7 +505,7 @@
       ? `<details class="left-out"><summary>${plural(s.leftOut, rest.length, { n: rest.length })}</summary>${rest.map(leftOut).join('')}</details>`
       : '');
     map = map || makeMap($('map'), (i) => pick(i, false));
-    map.show(shops.map((shop, i) => shop.location && {
+    map.show(shops.map((shop, i) => shop.location && shop.location.lat != null && {
       card: i, n: i + 1, lat: shop.location.lat, lon: shop.location.lon, sure: shop.verdict === 'accept',
       label: `${i + 1}. ${shop.name}`,
     }).filter(Boolean), s.map);
