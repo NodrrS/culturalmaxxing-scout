@@ -1,7 +1,7 @@
-/* Scout review screen. Tokens from the Culturalmaxxing design system.
+/* Scout search screen. Tokens from the Culturalmaxxing design system.
    One accent (madder), two greys, no shadows, no gradients as backgrounds, no third-party fonts. */
 :root{
-  --ivory:#FAF7F0;--paper:#FFFDF8;
+  --ivory:#FAF7F0;--paper:#FFFDF8;--mapbase:#F2EDE2;
   --ink:#1A1714;--ink-2:#6E665C;--ink-3:#787065;--ink-body:#3E3830;
   --line:#E2D9C8;--ctl:#D6CBB6;
   --madder:#A63A2B;--madder-dk:#7F2C20;
@@ -77,22 +77,31 @@ select{height:48px;min-width:0;max-width:100%;padding:0 12px;border:1px solid va
 /* the review queue */
 .count{font-family:var(--serif);font-size:20px;line-height:1.25;margin:12px 0 0;text-wrap:pretty}
 .count:empty{display:none}
+.missed{font-size:15px;line-height:1.5;color:var(--ink);margin:6px 0 0;max-width:68ch;text-wrap:pretty}
+.missed:empty{display:none}
 #cards{display:flex;flex-direction:column;gap:14px;margin-top:14px}
-.card{background:var(--paper);border:1px solid var(--line);padding:20px 22px 18px}
+.card{background:var(--paper);border:1px solid var(--line);padding:20px 22px 18px;scroll-margin:16px}
+.card.on{border-color:var(--ink)}
 .card-top{display:flex;align-items:flex-start;justify-content:space-between;gap:12px}
 .name{font-family:var(--serif);font-weight:500;font-size:24px;line-height:1.1;letter-spacing:-.01em;margin:0;overflow-wrap:anywhere}
-.meta{font-size:12px;line-height:1.35;color:var(--ink-2);margin-top:6px;letter-spacing:.02em}
+.meta{font-size:12px;line-height:1.35;color:var(--ink-2);margin-top:8px;letter-spacing:.02em}
+.meta:empty{display:none}
+.num{flex:none;display:inline-flex;align-items:center;justify-content:center;width:26px;height:26px;margin:0 10px 0 0;border-radius:50%;vertical-align:3px;background:var(--ink);color:var(--ivory);border:2px solid var(--ink);font-family:var(--sans);font-size:12px;font-weight:700;letter-spacing:0}
+.num.unsure{background:var(--paper);color:var(--ink)}
+.card.on .num{background:var(--madder);border-color:var(--madder);color:var(--paper)}
 .tags{display:flex;flex-wrap:wrap;gap:6px;margin-top:12px}
 .tag{min-height:30px;padding:3px 12px;border-radius:15px;border:1px solid var(--ctl);display:inline-flex;align-items:center;
   gap:7px;font-size:12px;font-weight:500;line-height:1.2}
 .tag svg{flex:none}
 .tag.verdict{flex:none;font-weight:700;letter-spacing:.04em}
 .tag.accept{background:var(--ink);border-color:var(--ink);color:var(--ivory)}
+.tag.seen.missed{border-color:var(--ink);font-weight:700}
 .reason{font-size:15px;line-height:1.6;color:var(--ink-body);margin:14px 0 0;max-width:68ch;text-wrap:pretty}
 .facts{margin:14px 0 0;display:grid;grid-template-columns:minmax(0,1fr);gap:0;border-top:1px solid var(--line)}
 .facts div{display:grid;grid-template-columns:132px minmax(0,1fr);gap:12px;padding:8px 0;border-bottom:1px solid var(--line)}
 .facts dt{font-size:11px;font-weight:700;letter-spacing:.14em;text-transform:uppercase;color:var(--ink-3);padding-top:3px}
 .facts dd{margin:0;font-size:14px;line-height:1.5;overflow-wrap:anywhere}
+.facts dd small{display:block;font-size:12px;color:var(--ink-2)}
 .facts a{display:inline-flex;align-items:center;min-height:44px}
 .facts div:has(a){align-items:center}
 .facts div:has(a) dt{padding-top:0}
@@ -106,27 +115,38 @@ select{height:48px;min-width:0;max-width:100%;padding:0 12px;border:1px solid va
 .flags li{font-size:11px;font-weight:700;letter-spacing:.14em;text-transform:uppercase;color:var(--ink);line-height:1.5}
 .actions{display:flex;flex-wrap:wrap;gap:8px;margin-top:16px}
 .actions .btn{flex:1 1 170px}
-.decided{display:flex;flex-wrap:wrap;align-items:center;gap:6px 14px;margin-top:16px;padding-top:12px;border-top:1px solid var(--ink)}
-.decided p{margin:0;font-size:14px;line-height:1.5}
-.decided strong{font-weight:700}
-.link{min-height:44px;display:inline-flex;align-items:center;font-size:11px;font-weight:700;letter-spacing:.06em;
-  text-transform:uppercase;color:var(--ink);border-bottom:1px solid var(--madder)}
-
-/* the draft listing */
-.draft{margin-top:18px;padding-top:16px;border-top:1px solid var(--ink)}
-.draft h3{font-family:var(--serif);font-weight:500;font-size:20px;line-height:1.15;letter-spacing:-.01em;margin:10px 0 0}
-.draft p{font-size:15px;line-height:1.6;color:var(--ink-body);margin:8px 0 0;max-width:68ch;text-wrap:pretty}
-.items{list-style:none;margin:14px 0 0;padding:0;border-top:1px solid var(--line)}
-.items li{padding:10px 0 11px;border-bottom:1px solid var(--line);display:grid;grid-template-columns:minmax(0,1fr) auto;gap:4px 14px;align-items:baseline}
-.items .t{font-family:var(--serif);font-size:15px;line-height:1.2;overflow-wrap:anywhere}
-.items .o{display:block;font-family:var(--serif);font-size:13px;font-style:italic;color:var(--ink-2);margin-top:3px}
-.items .p{font-size:14px;font-weight:600;white-space:nowrap}
-.items .m{grid-column:1 / -1;font-size:12px;line-height:1.35;color:var(--ink-2)}
-.items a{grid-column:1 / -1;justify-self:start}
-
 .empty-state{border:1px solid var(--line);background:var(--paper);padding:26px 22px;display:flex;flex-direction:column;gap:10px;align-items:flex-start}
 .empty-state .h{font-family:var(--serif);font-size:19px;line-height:1.25}
 .empty-state .b{font-size:14px;line-height:1.5;color:var(--ink-2);max-width:60ch}
+.left-out{margin-top:8px;border-top:1px solid var(--line)}
+.left-out summary{min-height:44px;display:flex;align-items:center;cursor:pointer;font-size:11px;font-weight:700;
+  letter-spacing:.14em;text-transform:uppercase;color:var(--ink-2)}
+.left-out .card{margin-top:10px}
+.card.small{padding:14px 18px 12px}
+.card.small .name{font-size:19px}
+.card.small .reason{margin-top:8px}
+
+/* the map: OpenStreetMap tiles, desaturated so the pins are the only strong colour */
+.map{position:relative;height:360px;margin-top:16px;overflow:hidden;background:var(--mapbase);
+  border:1px solid var(--line);touch-action:none;cursor:grab;user-select:none;-webkit-user-select:none}
+.map:active{cursor:grabbing}
+.map-tiles,.map-pins{position:absolute;inset:0}
+.map-tiles img{position:absolute;width:256px;height:256px;max-width:none;
+  filter:grayscale(.92) sepia(.12) brightness(1.04) contrast(.9)}
+.pin{position:absolute;width:44px;height:44px;margin:-22px 0 0 -22px;display:flex;align-items:center;justify-content:center}
+.pin span{display:flex;align-items:center;justify-content:center;width:26px;height:26px;border-radius:50%;
+  background:var(--ink);color:var(--ivory);border:2px solid var(--paper);font-size:12px;font-weight:700}
+.pin.unsure span{background:var(--paper);color:var(--ink);border-color:var(--ink)}
+.pin.on{z-index:1}
+.pin.on span{width:32px;height:32px;background:var(--madder);color:var(--paper);border-color:var(--paper)}
+.map-zoom{position:absolute;top:10px;right:10px;display:flex;flex-direction:column;gap:6px}
+.map-zoom button{width:44px;height:44px;display:flex;align-items:center;justify-content:center;
+  background:var(--paper);border:1px solid var(--ctl);font-size:20px;line-height:1;color:var(--ink)}
+.map-empty{position:absolute;left:12px;right:66px;bottom:12px;margin:0;padding:10px 12px;background:var(--paper);
+  border:1px solid var(--line);font-size:14px;line-height:1.45;color:var(--ink-2)}
+.map-credit{margin:0 0 14px;display:flex;justify-content:flex-end}
+.map-credit a{min-height:44px;display:inline-flex;align-items:center;font-size:12px;color:var(--ink-2)}
+#cards .card + .card{margin-top:0}
 .problem{border:1px solid var(--ink);background:var(--paper);padding:16px 20px;font-size:15px;line-height:1.5}
 .foot{margin-top:40px;padding-top:14px;border-top:1px solid var(--line);font-size:12px;line-height:1.5;color:var(--ink-2);max-width:760px}
 
@@ -140,6 +160,7 @@ select{height:48px;min-width:0;max-width:100%;padding:0 12px;border:1px solid va
 .dot.half{fill:none;stroke:currentColor;stroke-width:1.6;stroke-dasharray:2.2 2}
 
 @media(max-width:560px){
+  .map{height:300px}
   .display{font-size:30px;line-height:1.1}
   .card{padding:18px 16px 16px}
   .brief{padding:16px 16px 14px}
