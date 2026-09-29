@@ -4,6 +4,13 @@
 
 Bring **Culturalmaxxing Scout** from “26 offline tests pass, never run live” to a **demonstrable hackathon submission**: Nemotron on **Nebius Token Factory** and **Tavily** working end-to-end, human-in-the-loop review on the local screen, measurable agreement with hand-judged ground truth, and a public demo URL plus short video. Nothing is published and nobody is contacted; output stays in `scout/runs/` until a person approves.
 
+> **Scope update, 29 September 2026 (project owner).** The hackathon app helps **people find fashion shops in Berlin that platforms like Google miss**. It becomes a Culturalmaxxing feature **after** the hackathon; that integration is out of scope now. What this changes in this plan:
+>
+> - **In scope:** search for shoppers, **OpenStreetMap integration (new Phase 2b)**, the map on the screen, the plain-search comparison, Phases 0–3 and 6–9.
+> - **After the hackathon (Culturalmaxxing feature):** draft listings (Phase 4), the product-search probe (Phase 5), shop approval and the concierge (Phase 10.1–10.2). The code stays; the screen no longer shows the curator buttons (decisions, draft listing). Their endpoints remain in `scout/server.py`.
+> - **Verify** keeps Culturalmaxxing's test of a shop (cultural fashion in Berlin), so its score stays comparable with the hand-judged ground truth. `find` with a request uses the person's request as the test.
+> - **Demo policy, to decide:** a live search shows real shops from public sources (OpenStreetMap, their own pages), as any map does. The rule "only invented or consented shops" (Phase 7.3) was written for listings; decide whether it also applies to search results in the video. Private data from `data/` stays out either way.
+
 **Motivation (why this plan exists):**
 
 - Hackathon deadline **30 October 2026, 10:00 Pacific** — submission needs a working demo on Nebius + an NVIDIA open model + Tavily usage story
@@ -20,9 +27,11 @@ Bring **Culturalmaxxing Scout** from “26 offline tests pass, never run live”
 | Polite fetch + robots.txt + Tavily Extract fallback | **Done** — `engine/fetch.py`, wired in agent |
 | Draft listing (feed → rules → Nemotron) | **Done** — `scout/listing.py`, `engine/agent2_extraction.py`, `engine/agent3_taxonomy.py` |
 | CLI (`check`, `find`, `verify`, `probe`) | **Done** — `scout/cli.py` |
-| Review screen (EN/DE, SSE, decisions, listing) | **Done** — `scout/server.py`, `scout/web/` |
+| Search screen for shoppers (EN/DE, SSE, OpenStreetMap map) | **Done** — `scout/server.py`, `scout/web/`; decision and listing endpoints kept for the later Culturalmaxxing feature |
+| OpenStreetMap search and places | **Done, tested live** — `scout/osm.py`, `map_search` tool; see Phase 2b |
+| Plain-search comparison | **Done** — each request also runs as a plain Tavily search; screen shows which shops it misses |
 | File-backed runs & decisions | **Done** — `scout/store.py` |
-| Offline test suite (26 tests) | **Done** — `scout/test_offline.py` |
+| Offline test suite (37 tests) | **Done** — `scout/test_offline.py`, including OpenStreetMap stand-ins |
 | Live Nebius / Tavily integration | **Not done** — first step: `python3 scout/cli.py check` |
 | Verify score vs human (29 shops) | **Not done** — needs keys + private `data/` |
 | Prompt / budget tuning from misses | **Not done** |
@@ -37,6 +46,7 @@ Bring **Culturalmaxxing Scout** from “26 offline tests pass, never run live”
 
 - `python3 scout/cli.py check` exits **0** with tool calling + JSON schema + Tavily search on real keys
 - At least one **live** `find` brief saved under `scout/runs/` and reviewable in the UI
+- A person types a request on the screen and gets checked shops on an OpenStreetMap map, with the ones a plain web search misses marked
 - **Verify** run documented: e.g. “agreed with a person on X of 29” (plus revisit/missing breakdown)
 - Misses analyzed; prompt and/or budgets adjusted; re-run verify until score is acceptable for demo narrative
 - **`probe`** answers whether Tavily can see product pages on registered shops’ domains without copying catalogues
@@ -62,6 +72,7 @@ Hackathon Phases **0–7** may still run `python3 scout/server.py` for speed. An
 | Layer | Primary files |
 | --- | --- |
 | Discovery agent | `scout/agent.py` |
+| OpenStreetMap (Overpass, Nominatim) | `scout/osm.py` |
 | Nebius + Tavily + schema | `scout/clients.py` |
 | Draft listings | `scout/listing.py` |
 | Persistence | `scout/store.py` |
@@ -188,6 +199,41 @@ Verify live runs still respect code-enforced rules (README):
 
 ---
 
+## Phase 2b: OpenStreetMap
+
+Find shops that have no website, and put every shop you can visit on a map. No key needed.
+
+### 2b.1 Map search (done)
+
+- [x] `scout/osm.py`: Overpass search by a word in the shop's name (word start, any language) or around a place
+- [x] Berlin bounding box, not an area query: area queries time out on the busy public servers
+- [x] Server list in `OVERPASS_URL` (default: overpass-api.de, then maps.mail.ru); next server on timeout, 429 or 5xx
+- [x] Nominatim geocoding bounded to Berlin; at most one request a second
+- [x] Disk cache in `scout/cache/` (gitignored): Overpass a day, Nominatim a month
+- [x] Agent tool `map_search`; its OpenStreetMap links count as traced sources
+- [x] Tested live on 29 September: 3 places for "afro, abaya, kimono" across Berlin, 136 fashion places around Hermannplatz; 15–30 s per uncached search on the public servers
+
+### 2b.2 Places on the map (done)
+
+- [x] New record field `storefront` (`yes` / `no` / `unconfirmed`)
+- [x] Location set by code: the shop's own OpenStreetMap entry (same website, same name, or a cited entry with a matching street), else the geocoded address of a storefront
+- [x] Never a pin or a shown address for online-only sellers (their Impressum address may be a home) or rejected shops
+- [x] Search screen: numbered pins matching the result cards, directions via openstreetmap.org, desaturated tiles from tile.openstreetmap.org, credit under the map, CSP allows only that tile host
+
+### 2b.3 Plain-search comparison (done)
+
+- [x] Each request first runs as a plain Tavily search (10 results, no marketplace filter); each shop gets `visibility.plain_search_rank`
+- [x] Screen: "X of Y don't show up in a plain web search for this" — measured against Tavily, not Google; say so in the video
+
+### 2b.4 Still to do
+
+- [ ] Live run with keys: does Nemotron call `map_search` early, with community-language words?
+- [ ] Five requests (e.g. hanbok, abaya, aso-ebi fabric, sari blouse tailoring, kimono); note shops found only through the map
+- [ ] Public demo: choose a tile provider that allows real traffic (tile.openstreetmap.org is for light use)
+- [ ] When routes move to `backend/`, keep `scout/osm.py` as the domain layer; no second map client
+
+---
+
 ## Phase 3: Verification benchmark (`verify`)
 
 Measure Scout against hand-judged ground truth; primary tuning loop.
@@ -221,7 +267,7 @@ Measure Scout against hand-judged ground truth; primary tuning loop.
 
 ---
 
-## Phase 4: Draft listings (live)
+## Phase 4: Draft listings (live) — after the hackathon (Culturalmaxxing feature)
 
 Prove end-to-end “accept → draft listing” for shops with feeds.
 
@@ -243,7 +289,7 @@ Prove end-to-end “accept → draft listing” for shops with feeds.
 
 ---
 
-## Phase 5: Concierge feasibility (`probe`)
+## Phase 5: Concierge feasibility (`probe`) — after the hackathon (Culturalmaxxing feature)
 
 Decide whether a future “occasion concierge” can search **within** shop domains without scraping full catalogues.
 
@@ -308,9 +354,9 @@ Choose one approach and document it in README:
 
 ### 7.3 Video (< 3 minutes, YouTube)
 
-- [ ] Script: problem → Find → Verify → Judge on screen → Draft listing → sources / robots / no publish
-- [ ] Show **only** `sample-run` or consented shops
-- [ ] Mention Nebius Nemotron + Tavily roles explicitly (Best Use of Tavily prize)
+- [ ] Script: problem → a request → map search + web search in several languages → checked shops on the map → "X of Y not in a plain web search" → sources / robots / business data only
+- [ ] Show **only** `sample-run` or consented shops — or real public search results, if the team decides so (see the scope update)
+- [ ] Mention Nebius Nemotron, Tavily and OpenStreetMap roles explicitly (Best Use of Tavily prize)
 - [ ] Link video in README
 
 ### 7.4 Submission copy
@@ -412,11 +458,13 @@ Not required for 30 October submission; tracks README “Next” item.
 ### B.1 Scout pipeline (unchanged architecture)
 
 ```
-brief ──► Nemotron plans ──► web_search (Tavily)
+brief ──► plain web search (Tavily, for comparison)
+  └────► Nemotron plans ──► map_search (OpenStreetMap: Overpass, Nominatim)
               ▲    │
+              │    ├──────► web_search (Tavily)
               │    ├──────► read_page (fetch → optional Tavily Extract)
               │    ├──────► check_platform (Shopify / Woo feed?)
-              └────┴──────► submit_shops ──► schema + sources ──► review queue
+              └────┴──────► submit_shops ──► schema + sources ──► places (code) ──► screen with map
 ```
 
 ### B.2 Local review API (`scout/server.py` today → `backend/` after migration)
@@ -467,7 +515,7 @@ CMX_BOT_CONTACT=
 After Phases 1–7:
 
 1. [ ] `python3 scout/test_offline.py` — all pass, no network
-2. [ ] `python3 scout/cli.py check` — exit 0, tool + schema + search OK
+2. [ ] `python3 scout/cli.py check` — exit 0, tool + schema + search + OpenStreetMap OK
 3. [ ] CLI `find` with invented-style brief — run file on disk, sensible verdicts + sources
 4. [ ] `python3 scout/server.py` — live find from UI, steps stream, decisions saved
 5. [ ] `#sample` — full replay without keys; footer/copy states data is invented
@@ -541,8 +589,8 @@ Suggested endpoint keys (names illustrative — align with OpenAPI):
 ## Notes
 
 - **Human in the loop:** Automation ends at the review queue; `accept` / `reject` / revisit on screen is the intended workflow for the hackathon story.
-- **NVIDIA + Tavily narrative:** Nemotron plans and submits structured shops; Tavily is search plus Extract when the polite fetcher gets a thin page — say both in the video.
-- **Priority order:** Phase 0 → Phase 1 (check + smoke find) → Phase 3 (verify) → Phase 7 (demo + video) → Phase 2/4/5 as depth → Phase 6/8/9 in parallel → Phase 10 later.
+- **NVIDIA + Tavily + OpenStreetMap narrative:** Nemotron plans and submits structured shops; Tavily is search, the plain-search comparison, and Extract when the polite fetcher gets a thin page; OpenStreetMap finds shops without websites and places them on the map — say all three in the video.
+- **Priority order:** Phase 0 → Phase 1 (check + smoke find) → Phase 2b.4 (live map runs) → Phase 3 (verify) → Phase 7 (demo + video) → Phase 2 as depth → Phase 6/8/9 in parallel → Phases 4, 5 and 10 after the hackathon.
 - **Backend folder:** All HTTP, Docker, deploy env, and FastAPI routes belong in **`backend/`**; migrate off `scout/server.py` in Phase 10 / Appendix E — do not add a second backend tree.
 - **Private data:** Never use real shop names from `data/` in the public demo URL or YouTube; use `sample-run.json` unless written consent exists.
 - **Breaking change risk:** Tightening prompts may increase `revisit` — track revisit rate so the map does not starve from over-caution.
