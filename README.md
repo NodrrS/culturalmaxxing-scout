@@ -103,7 +103,7 @@ Submissions close **30 October 2026, 10:00 Pacific**.
 | Runs on Nebius Token Factory | Built, not yet run live |
 | Uses an NVIDIA open model | Nemotron is the default model |
 | Public repository | This one |
-| Open-source licence | **Missing.** To be chosen before submission |
+| Open-source licence | MIT, see [LICENSE](LICENSE) |
 | Working demo URL | To do |
 | Video under 3 minutes, on YouTube | To do |
 | Best Use of Tavily, a separate prize | Tavily does search, and Extract as the fallback reader |
@@ -115,7 +115,6 @@ Submissions close **30 October 2026, 10:00 Pacific**.
 - [ ] Tune the prompt and the budgets on the misses.
 - [ ] Run `probe` to decide whether a product search across shops is possible without copying any catalogue.
 - [ ] Add the Spectral and Karla font files to `scout/web/fonts/`. The screen loads no font from a third party and falls back to Georgia and Helvetica until then.
-- [ ] Choose a licence.
 - [ ] Put up a demo URL.
 - [ ] Record the video. Show only invented shops or shops that have agreed.
 - [ ] Next: an occasion concierge for shoppers ("I'm invited to a mehndi. What do I wear, and where in Berlin?"), once the first shops have agreed.
@@ -129,3 +128,7 @@ Submissions close **30 October 2026, 10:00 Pacific**.
 ## About Culturalmaxxing
 
 Culturalmaxxing Berlin is a map of the city's cultural fashion shops, for the people who wear these clothes and for everyone curious about them. It sends visitors to the shop, in person or to its own website. It sells nothing itself.
+
+## Licence
+
+[MIT](LICENSE)
