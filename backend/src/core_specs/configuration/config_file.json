@@ -1,0 +1,49 @@
+{
+    "defaults":{
+        "general_data_path":"src/core_specs/data/general_data.json"
+    },
+    
+    "logging":{
+        "logging_level":"debug",
+        "dir_name":"logs",
+        "log_file_name":"x_bcknd"
+    },
+    "email_validation":{
+        "allowed_providers":["gmail","outlook","yahoo","hotmail","icloud","protonmail","aol","zoho","gmx","mail"],
+        "allowed_tlds":["com", "org", "net", "co", "io", "edu", "gov"]
+    },
+
+    "network":{
+        "uvicorn_app_reference": "main:app",
+        "server_port":8000,
+        "host": "0.0.0.0",
+        "reload": false,
+        "workers": 1,
+        "proxy_headers": true
+    },
+
+    "endpoints": {
+        "root_directory_endpoint":{
+            "request_limit":25,
+            "unit_of_time_for_limit":"m",
+            "endpoint_prefix": "",
+            "endpoint_tag":"root",
+            "endpoint_route": "/"
+        },
+        
+        "example_endpoint_1": {
+            "request_limit": 3,
+            "unit_of_time_for_limit": "m",
+            "endpoint_prefix": "/subsection",
+            "endpoint_tag": "tag_name",
+            "endpoint_route": "/endpoint_name"
+        },
+        "example_endpoint_2": {
+            "request_limit": 5,
+            "unit_of_time_for_limit": "m",
+            "endpoint_prefix": "/subsection",
+            "endpoint_tag": "tag_name",
+            "endpoint_route": "/items/{item_id}"
+        }
+    }
+}

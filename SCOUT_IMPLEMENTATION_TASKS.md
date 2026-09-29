@@ -31,6 +31,7 @@ Bring **Culturalmaxxing Scout** from “26 offline tests pass, never run live”
 | Public demo URL | **Not done** |
 | YouTube video (< 3 min) | **Not done** |
 | CI running `test_offline.py` on push | **Not verified** — add workflow if missing |
+| FastAPI backend (`backend/`) | **Scaffold present** — [backend/](./backend/); review HTTP still in `scout/server.py`; **migrate all backend concerns into `backend/`** |
 
 **Target state:**
 
@@ -43,9 +44,20 @@ Bring **Culturalmaxxing Scout** from “26 offline tests pass, never run live”
 - **Demo URL** serves sample replay or a recorded run; **video** shows only invented or consented shops
 - Root README **Status** and hackathon checklist updated to match reality
 
-**Reference docs:** [README.md](./README.md), [data/README.md](./data/README.md), [engine/README.md](./engine/README.md)
+**Reference docs:** [README.md](./README.md), [data/README.md](./data/README.md), [engine/README.md](./engine/README.md), [backend/README.md](./backend/README.md)
 
-**Related code:**
+**Canonical backend home:** [backend/](./backend/) — FastAPI app, Docker, rate limits, logging, and (over time) the HTTP surface that today lives in `scout/server.py`. **`scout/`** keeps the agent, CLI, engine imports, runs on disk, and offline tests until routers in `backend/` call into it.
+
+**Two HTTP surfaces (temporary split):**
+
+| Role | Location today | Target |
+| --- | --- | --- |
+| **Review screen** (hackathon demo, human-in-the-loop) | Stdlib SSE — `scout/server.py`, static `scout/web/` | **Migrate** routes + static mount into `backend/`; thin wrapper or deprecation of `scout/server.py` |
+| **Public / product REST API** (map, third parties, deploy) | FastAPI scaffold — `backend/main.py`, routers under `backend/src/` | Extend in place; do not start a second backend folder |
+
+Hackathon Phases **0–7** may still run `python3 scout/server.py` for speed. Any new HTTP, hosting, or API work goes under **`backend/`** only. Phase 10 completes migration (review SSE, static `scout/web/`, deploy env, Docker) while `scout/` + `engine/` remain the domain logic layer.
+
+**Related code — Scout (agent + review):**
 
 | Layer | Primary files |
 | --- | --- |
@@ -60,6 +72,18 @@ Bring **Culturalmaxxing Scout** from “26 offline tests pass, never run live”
 | Offline tests | `scout/test_offline.py` |
 | Demo data | `scout/web/sample-run.json` |
 | Env template | `scout/.env.example` |
+
+**Related code — Backend (`backend/`):**
+
+| Module (under `backend/`) | Role for Scout |
+| --- | --- |
+| `main.py`, `config_loader`, `config_file.json` | App shell, port/workers, per-route rate limits (expensive `find` / LLM proxy) |
+| `src/api_endpoints/routers/.../example_router.py` | Pattern for runs, decisions, listings, review SSE |
+| `src/models/models_example.py` | Pydantic request/response models mirroring run JSON shapes |
+| `src/utils/secure_file_io.py` | Safer reads/writes under `scout/runs/` (path confinement, atomic JSON) — replace or wrap `store.py` I/O from backend services |
+| `src/utils/custom_logger.py`, `limiter.py`, `request_limiter.py` | Production logging + 429 handling vs ad hoc prints in `scout/server.py` |
+| `DOCKERFILE`, `docker-compose.yml`, optional Redis | Hosted demo and production; static `scout/web/` served from backend when migrated |
+| `.env.example` (RSA keys) | Backend deploy env; merge `NEBIUS_*`, `TAVILY_*`, `CMX_BOT_CONTACT` from `scout/.env.example` into `backend/.env` for hosted runs — never commit |
 
 ---
 
@@ -83,8 +107,18 @@ Run once per machine / teammate. Never commit secrets or private shop files.
 
 ### 0.3 Python
 
-- [ ] Use Python **3.14** (or project-tested version); no pip install required (stdlib only)
+**Scout core (`scout/`, `engine/`):**
+
+- [ ] Use Python **3.14** (or project-tested version); **no pip install** required for CLI, agent, review server, offline tests
 - [ ] From repo root: `python3 scout/test_offline.py` — all green before any live spend
+
+**Backend (`backend/`) — venv when running or extending the FastAPI app:**
+
+- [ ] Python **3.12+** per [backend/README.md](./backend/README.md)
+- [ ] `cd backend && python -m venv venv` → `pip install -r requirements.txt`
+- [ ] Copy `backend/.env.example` → `backend/.env`; generate RSA keys via `backend/src/utils/keys_generator.py` if using encryption helpers; add Scout keys when wiring live routes
+- [ ] Smoke: `cd backend && python main.py` → `GET /` returns `"status": "ok"`; optional `GET /docs`
+- [ ] Do not add new HTTP servers outside `backend/`; hackathon Phases 0–7 still use `scout/server.py` until those routes are migrated
 
 ---
 
@@ -227,7 +261,7 @@ Decide whether a future “occasion concierge” can search **within** shop doma
 
 ## Phase 6: Review UI polish
 
-Local-only server; not a public REST product API.
+Local **review** server still runs from `scout/server.py` in Phases 1–7; Phase 6 polish applies there until the review API and static assets **move to `backend/`** (see Phase 10.3 and Appendix E).
 
 ### 6.1 Typography
 
@@ -264,8 +298,9 @@ Choose one approach and document it in README:
 | Strategy | Notes |
 | --- | --- |
 | **A — Static replay host** | Host `index.html` + assets + `sample-run.json` only; `#sample` on load; no live keys on server |
-| **B — Tunnel to localhost** | `server.py` on operator machine during judging — fragile |
+| **B — Tunnel to localhost** | `scout/server.py` on operator machine during judging — fragile |
 | **C — Recorded run bundle** | Ship JSON + static UI on GitHub Pages / Nebius-hosted static |
+| **D — Backend Docker (static or API)** | `cd backend && docker-compose up --build`: serve **static** `scout/web/` + `sample-run.json` from the backend image or sidecar; **or** read-only replay routes in `backend/src/api_endpoints/` — still **no** judge-facing API keys on the public demo |
 
 - [ ] Implement chosen strategy
 - [ ] Add demo URL to README and Devpost submission
@@ -291,6 +326,7 @@ Choose one approach and document it in README:
 
 - [ ] Add or confirm GitHub Action: `python3 scout/test_offline.py` on push/PR to `main`
 - [ ] No network, no keys in CI
+- [ ] Optional (after backend routes land): CI job `cd backend && pip install -r requirements.txt && pytest tests/` — add `backend/tests/` as needed
 
 ### 8.2 Pre-push habit (contributors)
 
@@ -309,6 +345,7 @@ Choose one approach and document it in README:
 - [ ] Refresh **Status**, **Open tasks** (check off completed items)
 - [ ] Add **Verify score** line when Phase 3 complete
 - [ ] Link to this file from README **Further reading** or **Working together**
+- [ ] When Phase 10 starts: link [backend/README.md](./backend/README.md) and Appendix E from README **Next**
 
 ### 9.2 Operator runbook (short)
 
@@ -337,10 +374,17 @@ Not required for 30 October submission; tracks README “Next” item.
 - [ ] Depends on agreed shops + probe results
 - [ ] Likely new agent brief, not an extension of Scout verify loop
 
-### 10.3 Public backend API
+### 10.3 Public backend API (all HTTP lives in `backend/`)
 
-- [ ] Current `server.py` is **RPC + SSE for localhost review**, not REST for a public map
-- [ ] If a public map frontend is built, design new API boundaries; do not treat `/api/find` as stable public contract
+- [ ] **`backend/` is the only backend package** — extend [backend/](./backend/) (trim example routers, set `API_TITLE`, keep health check + Docker)
+- [ ] **Migrate** `scout/server.py` behavior into FastAPI routers + services (status, replay SSE, find SSE, decision, listing, static files, CSP, fonts, single-run lock)
+- [ ] Mount or copy `scout/web/` for the review UI from the backend process (paths documented in README)
+- [ ] Document boundary during migration: CLI and tests may still mention `scout/server.py` until a `backend`-entry review command replaces it
+- [ ] Public map contract: new resource routes in `backend/src/core_specs/configuration/config_file.json` + routers; import `scout.agent`, `scout.listing`, `scout.store` — do not duplicate handler logic in a second server
+- [ ] Wire secrets in **`backend/.env`**: `NEBIUS_API_KEY`, `TAVILY_API_KEY`, `CMX_BOT_CONTACT` (+ RSA vars from `.env.example` only if used); rate-limit live find via SlowAPI in `backend/`
+- [ ] Persistence: backend services call `scout/store.py` or wrap with `backend/src/utils/secure_file_io.py` and `set_allowed_root` pointing at `scout/runs/`
+- [ ] OpenAPI at `/docs` is the stable contract for a Culturalmaxxing map frontend
+- [ ] Deploy via `backend/docker-compose.yml`; Redis optional (cache GETs), not a substitute for run files
 
 ---
 
@@ -358,7 +402,8 @@ Not required for 30 October submission; tracks README “Next” item.
 | Demo URL + video + Devpost | Phase 7 |
 | CI offline tests | Phase 8 |
 | Docs and runbook | Phase 9 |
-| Map + concierge + REST | Phase 10 (optional) |
+| Map + concierge + REST | Phase 10 (optional) — **Appendix E**; complete **`backend/`** migration |
+| Docker static / hosted demo (optional) | Phase 7 strategy D or Appendix E.4 |
 
 ---
 
@@ -374,7 +419,7 @@ brief ──► Nemotron plans ──► web_search (Tavily)
               └────┴──────► submit_shops ──► schema + sources ──► review queue
 ```
 
-### B.2 Local review API (not REST)
+### B.2 Local review API (`scout/server.py` today → `backend/` after migration)
 
 | Method | Path | Response |
 | --- | --- | --- |
@@ -384,7 +429,7 @@ brief ──► Nemotron plans ──► web_search (Tavily)
 | POST | `/api/decision` | JSON |
 | POST | `/api/listing` | JSON |
 
-Runs and shops are identified in **JSON bodies**, not as `/runs/{id}` resources.
+Runs and shops are identified in **JSON bodies**, not as `/runs/{id}` resources. **Implement these paths in `backend/`** when migrating off stdlib; the public map may add **resource-oriented** `/v1/...` routes alongside or instead — see Appendix E.
 
 ### B.3 Verify score (headline metrics)
 
@@ -441,10 +486,55 @@ After Phases 1–7:
 | Emailing or contacting shops | Ethics / scope; bot contact is for transparency on crawl only |
 | Committing `data/shops.json` or ground truth | Privacy; gitignored |
 | Replacing file store with Postgres | Not needed for hackathon; YAGNI |
-| Full REST API for third-party clients | Current server is local review adapter only |
+| Full REST API for third-party clients | Hackathon: may still use `scout/server.py`; all new backend work and final product API live under **`backend/`** only |
 | Copying product descriptions or images into drafts | Policy enforced in listing pipeline |
 | Running unbounded parallel finds on server | Blocked by design (API cost + fairness) |
 | Occasion concierge MVP | Post-agreement shops; Phase 10 |
+
+---
+
+## Appendix E: Migrating backend concerns to `backend/`
+
+Use when moving HTTP, deploy, and public API off `scout/server.py` into [backend/](./backend/). Skip for hackathon Phases 0–7 unless using strategy **7.2 D** (Docker from `backend/`).
+
+### E.1 Monorepo layout (single backend folder)
+
+- [ ] All FastAPI code, Docker, backend `.env`, and backend tests live under **`backend/`** — no parallel `api/` or duplicate app roots
+- [ ] Remove or rename example router groups under `backend/src/api_endpoints/routers/`; keep `root_endpoint.py` health check
+- [ ] Configure imports so `backend/` can call `scout.*` and `engine.*` from repo root (e.g. `PYTHONPATH`, package layout, or documented `sys.path` in `main.py`)
+
+### E.2 Migrate review server (`scout/server.py`)
+
+- [ ] Port `/api/status`, `/api/replay`, `/api/find`, `/api/decision`, `/api/listing` to routers + services in `backend/src/`
+- [ ] Preserve SSE event shape expected by `scout/web/app.js` (or update frontend once under `backend/static/` / mounted `scout/web/`)
+- [ ] Port static hosting, `fonts.css`, CSP, `own_page()` / origin checks, and the **one live find at a time** lock
+- [ ] Deprecate `python3 scout/server.py` in README when `cd backend && python main.py` (or compose) is equivalent
+
+### E.3 Config-driven public routes (`backend/src/core_specs/configuration/config_file.json`)
+
+Suggested endpoint keys (names illustrative — align with OpenAPI):
+
+| Config key | Method | Public path (example) | Backing code |
+| --- | --- | --- | --- |
+| `runs_list` | GET | `/v1/runs` | `store.list_runs()` |
+| `runs_get` | GET | `/v1/runs/{run_id}` | `store.load_run(...)` |
+| `decisions_create` | POST | `/v1/runs/{run_id}/decisions` | `store.decide(...)` |
+| `find_create` | POST | `/v1/find` | `agent.research(...)` — strict rate limit + auth |
+| `listing_create` | POST | `/v1/runs/{run_id}/shops/{slug}/listing` | `listing.draft(...)` |
+
+- [ ] Add matching Pydantic models under `backend/src/models/` (follow `models_example.py` Base/Create/Response split)
+- [ ] Set SlowAPI limits on any route that triggers Nebius/Tavily spend
+
+### E.4 Static review UI
+
+- [ ] Serve `scout/web/` from the backend app (static mount or copy into `backend/static/` — one documented approach)
+- [ ] Judges’ keyless demo still follows Phase 7 strategies A/C/D; production demo must not ship operator `.env`
+
+### E.5 Ops
+
+- [ ] `cd backend && docker-compose up --build` with secrets via host env file (never in image layers)
+- [ ] Logs under `backend/logs/`; correlate with run ids in messages
+- [ ] Optional `REDIS_ENABLED=true` only for caching idempotent GETs — run files remain source of truth until Postgres is added in `backend/src/resources/db/`
 
 ---
 
@@ -453,5 +543,6 @@ After Phases 1–7:
 - **Human in the loop:** Automation ends at the review queue; `accept` / `reject` / revisit on screen is the intended workflow for the hackathon story.
 - **NVIDIA + Tavily narrative:** Nemotron plans and submits structured shops; Tavily is search plus Extract when the polite fetcher gets a thin page — say both in the video.
 - **Priority order:** Phase 0 → Phase 1 (check + smoke find) → Phase 3 (verify) → Phase 7 (demo + video) → Phase 2/4/5 as depth → Phase 6/8/9 in parallel → Phase 10 later.
+- **Backend folder:** All HTTP, Docker, deploy env, and FastAPI routes belong in **`backend/`**; migrate off `scout/server.py` in Phase 10 / Appendix E — do not add a second backend tree.
 - **Private data:** Never use real shop names from `data/` in the public demo URL or YouTube; use `sample-run.json` unless written consent exists.
 - **Breaking change risk:** Tightening prompts may increase `revisit` — track revisit rate so the map does not starve from over-caution.
