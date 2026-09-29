@@ -73,6 +73,7 @@ Hackathon Phases **0–7** may still run `python3 scout/server.py` for speed. An
 | --- | --- |
 | Discovery agent | `scout/agent.py` |
 | OpenStreetMap (Overpass, Nominatim) | `scout/osm.py` |
+| Google Maps (optional, demo key) | `scout/google_places.py` |
 | Nebius + Tavily + schema | `scout/clients.py` |
 | Draft listings | `scout/listing.py` |
 | Persistence | `scout/store.py` |
@@ -231,6 +232,28 @@ Find shops that have no website, and put every shop you can visit on a map. No k
 - [ ] Five requests (e.g. hanbok, abaya, aso-ebi fabric, sari blouse tailoring, kimono); note shops found only through the map
 - [ ] Public demo: choose a tile provider that allows real traffic (tile.openstreetmap.org is for light use)
 - [ ] When routes move to `backend/`, keep `scout/osm.py` as the domain layer; no second map client
+
+---
+
+## Phase 2c: Google Maps (optional, demo key)
+
+Catch shops that opened recently: owners often add them to Google Maps before anyone maps them on OpenStreetMap.
+
+### 2c.1 Built (branch `google-places`)
+
+- [x] `scout/google_places.py`: Places API (New) Text Search, restricted to the Berlin box, Pro fields only (name, address, status, types): 5,000 free a month on a normal key; no website, hours or location
+- [x] Agent tool `google_places`, offered only when `GOOGLE_MAPS_API_KEY` is set **and** `NEBIUS_ZERO_DATA_RETENTION=on` (Nebius stores prompts by default; Google's content must not be stored by the model)
+- [x] No caching of Google answers; step log keeps place IDs only; links built from place IDs
+- [x] Google-only shops: no pin on the OpenStreetMap map, address not stored or shown, an "Open in Google Maps" box with Google's required attribution
+- [x] Nominatim geocoding only for records backed by a non-Google source
+- [x] `check` part 4 (optional); 6 offline tests
+
+### 2c.2 Still to do
+
+- [ ] Project owner: create a Maps Demo Key (no credit card) and turn on Zero Data Retention on the Nebius Token Factory account profile page
+- [ ] Live run: does Nemotron use `google_places` for "Neueröffnung" style requests, and do its leads survive the checks?
+- [ ] Before any launch: the demo key is for development and testing only. A normal key needs a billing account; with an EEA billing address, Google content may then be shown on non-Google maps
+- [ ] When routes move to `backend/`, keep `scout/google_places.py` as the domain layer
 
 ---
 

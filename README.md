@@ -2,7 +2,7 @@
 
 Scout helps people find fashion shops in Berlin that big platforms and a plain web search miss. You say what you are looking for. Scout searches OpenStreetMap and the web, in German and in the community's own language, and checks every shop. It then shows them on a map, with a source for every fact.
 
-Built for the [Nebius x NVIDIA Global AI Hackathon](https://nebiusglobalaihackathon.devpost.com/) with **NVIDIA Nemotron** on **Nebius Token Factory**, **Tavily** for web search and **OpenStreetMap** for places.
+Built for the [Nebius x NVIDIA Global AI Hackathon](https://nebiusglobalaihackathon.devpost.com/) with **NVIDIA Nemotron** on **Nebius Token Factory**, **Tavily** for web search and **OpenStreetMap** for places. **Google Maps** is an optional extra source of leads.
 
 ## The idea
 
@@ -35,7 +35,9 @@ Fill in `NEBIUS_API_KEY`, `TAVILY_API_KEY` and `CMX_BOT_CONTACT` (a project addr
 python3 scout/cli.py check
 ```
 
-`check` lists the Nemotron models your key can reach, tries one tool call and one JSON-schema call, runs one Tavily search, and runs one OpenStreetMap search and one address lookup (no key needed). If the default model is served from another endpoint, it prints the two lines to add to `scout/.env`.
+`check` lists the Nemotron models your key can reach, tries one tool call and one JSON-schema call, runs one Tavily search, and runs one OpenStreetMap search and one address lookup (no key needed). With a Google Maps key, it also runs one Google search. If the default model is served from another endpoint, it prints the two lines to add to `scout/.env`.
+
+Google Maps is optional. See [Google Maps](#google-maps-optional) for the demo key and the one Nebius setting it needs.
 
 ```bash
 python3 scout/server.py
@@ -47,7 +49,7 @@ The search screen opens at http://127.0.0.1:8770. The sample search replays with
 
 | Command | What it does | Needs |
 |---|---|---|
-| `python3 scout/cli.py check` | Are the keys and the map working? | Keys |
+| `python3 scout/cli.py check` | Are the keys and the maps working? | Keys |
 | `python3 scout/cli.py find "REQUEST"` | Find shops for a request, for example `find "a hanbok for a wedding"`. `--seeds N` also checks N names from `data/seeds.json` | Keys |
 | `python3 scout/cli.py verify` | Re-check shops a person already judged by hand, and score Scout against that person. `--limit 6` for a short run | Keys, private data |
 | `python3 scout/cli.py probe` | Can Tavily see the registered shops' product pages? For the later Culturalmaxxing feature | Keys, private data |
@@ -66,13 +68,15 @@ request ──► plain web search, kept for comparison
              │    │                          says no: stop                        if the page needs rendering
              │    ├──────► check_platform ► does the shop sell online?
              │    │
+             │    ├──────► google_places ──► Google Maps, optional: leads as place IDs, never a pin
              └────┴──────► submit_shops ──► schema ──► source tracing ──► place on the map ──► screen
 ```
 
 | Path | Job |
 |---|---|
-| [scout/agent.py](scout/agent.py) | The prompt, the five tools, the loop, the budgets, source tracing, places and the plain-search comparison |
+| [scout/agent.py](scout/agent.py) | The prompt, the tools, the loop, the budgets, source tracing, places and the plain-search comparison |
 | [scout/osm.py](scout/osm.py) | OpenStreetMap: Overpass search and Nominatim geocoding, polite and cached |
+| [scout/google_places.py](scout/google_places.py) | Google Maps, optional: Places API Text Search with a Maps Demo Key |
 | [scout/clients.py](scout/clients.py) | Nebius and Tavily over plain HTTPS, the schema check, the cost counter |
 | [scout/server.py](scout/server.py), [scout/web/](scout/web/) | The search screen with its map, in English and German |
 | [scout/store.py](scout/store.py) | Runs, step logs and decisions as plain files |
@@ -93,6 +97,31 @@ Both data services are run by volunteers, so Scout keeps to their usage policies
 
 A heads-up for a public demo: the map tiles load from OpenStreetMap's servers, which see each visitor's IP address, and those servers are meant for light use. A demo with real traffic needs a tile provider that allows it.
 
+## Google Maps (optional)
+
+Owners often add a new shop to Google Maps in its first days, before anyone maps it on OpenStreetMap or a search engine finds its website. With a key, Scout gets a sixth tool, `google_places`, which asks Google Maps for leads and then checks them like any other.
+
+**Setting it up**
+
+1. Get a [Maps Demo Key](https://mapsplatform.google.com/maps-demo-key/). It needs a Google account but no credit card. It has daily limits, and Google offers it for development and testing, not for a launched product.
+2. Turn on **Zero Data Retention** on your Nebius Token Factory account profile page. Nebius never trains on your prompts, but it stores them by default to speed up answers, and Google's content must not be stored by the model.
+3. Add both lines to `scout/.env`:
+
+```bash
+GOOGLE_MAPS_API_KEY=your-demo-key
+NEBIUS_ZERO_DATA_RETENTION=on
+```
+
+Without the second line, Scout never offers the tool to Nemotron, and `check` says why.
+
+**What the code does about Google's terms**
+
+- It asks only for name, address, open or closed, and the kind of place. That's Google's "Pro" tier, 5,000 free searches a month on a normal key. Website, opening hours and ratings would move every search into the 1,000-a-month tier, so they are left out.
+- Nothing from Google is cached; every search goes to Google.
+- Only place IDs are kept, because Google exempts them from its storage limits. The step log records place IDs, never names or addresses. Links to Google Maps are built from the place IDs.
+- A shop that only Google knows is never drawn on the OpenStreetMap map, and its address is neither stored nor shown. It gets an "Open in Google Maps" button in a separate box with Google's required credit instead. The demo key has no EEA billing account, so the EEA permission to show Google content on other maps may not apply to it.
+- An address is geocoded onto the map only when a source other than Google backs the record.
+
 ## What the code enforces, whatever the model says
 
 - **robots.txt is final.** If a site asks crawlers to stay out, neither our fetcher nor Tavily reads it, and the record is marked `crawl: false`.
@@ -101,7 +130,8 @@ A heads-up for a public demo: the map tiles load from OpenStreetMap's servers, w
 - **Places come from the code.** A pin is the shop's own OpenStreetMap entry, or the geocoded address of a shop that customers can visit. The model never gives coordinates. An online-only seller's address may be a home, so it is never pinned or shown.
 - **The comparison is measured, not claimed.** Each search first runs the same request as a plain web search, and the screen shows which shops that search would have missed. The comparison is with a Tavily search, not with Google.
 - **The vocabulary is closed.** Every record is checked against the schema. A value outside the vocabulary goes back to the model with the reason.
-- **Budgets are counted in code.** When the map searches, web searches or page reads run out, the model has to submit.
+- **Budgets are counted in code.** When the map searches, Google searches, web searches or page reads run out, the model has to submit.
+- **Google content stays Google's.** Place IDs only in the logs, no Google coordinates at all, no address known only from Google, and no Google results to the model unless Nebius keeps no data.
 - **Pages are data.** Page text and map entries reach the model only as tool answers, never as instructions.
 - **Business data only.** Scout records the channels a business publishes for customers, never private addresses or personal numbers.
 - **The screen is local.** It listens on 127.0.0.1, refuses requests from other websites, runs one search at a time, and loads nothing from outside except map tiles.
@@ -133,6 +163,7 @@ Submissions close **30 October 2026, 10:00 Pacific**.
 ## Open tasks
 
 - [ ] Run `check` with real keys. Fix whatever the live Nemotron and Tavily answers show.
+- [ ] Get a Maps Demo Key, turn on Zero Data Retention in Nebius, and try `google_places` on a shop that opened recently.
 - [ ] Try five requests, for example a hanbok for a wedding, an abaya, aso-ebi fabric, sari blouse tailoring, a kimono. Note which shops the plain search misses.
 - [ ] Run `verify --limit 6`, then the full set. Note the score, for example "agreed with a person on X of 29".
 - [ ] Tune the prompt and the budgets on the misses.
