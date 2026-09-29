@@ -14,6 +14,7 @@ Scout finds them in four steps:
 2. **Search the web.** In German first, then in the community's own language (Turkish, Arabic, Russian and others). Marketplaces are filtered out.
 3. **Check.** Scout reads the shop's Impressum or a recent listing. Is it in Berlin? Does it sell what you asked for? Is it still trading? Can you visit it?
 4. **Show.** Confirmed shops come first, then shops worth a visit to check, on a map with directions. Each result says whether a plain web search for the same request would have found it.
+5. **Learn from visitors.** People who went there say whether a shop exists and correct what Scout got wrong. Anyone can send a tip about a shop Scout missed. See [Visitors in the loop](#visitors-in-the-loop).
 
 **Scope.** For the hackathon, Scout is a standalone app for shoppers. After the hackathon it becomes a feature of [Culturalmaxxing Berlin](#about-culturalmaxxing). The shop approval flow and the draft listings in the code belong to that later step, not to the hackathon app.
 
@@ -77,6 +78,7 @@ request ──► plain web search, kept for comparison
 | [scout/agent.py](scout/agent.py) | The prompt, the tools, the loop, the budgets, source tracing, places and the plain-search comparison |
 | [scout/osm.py](scout/osm.py) | OpenStreetMap: Overpass search and Nominatim geocoding, polite and cached |
 | [scout/google_places.py](scout/google_places.py) | Google Maps, optional: Places API Text Search with a Maps Demo Key |
+| [scout/feedback.py](scout/feedback.py) | What visitors report about shops, and the tips they send |
 | [scout/clients.py](scout/clients.py) | Nebius and Tavily over plain HTTPS, the schema check, the cost counter |
 | [scout/server.py](scout/server.py), [scout/web/](scout/web/) | The search screen with its map, in English and German |
 | [scout/store.py](scout/store.py) | Runs, step logs and decisions as plain files |
@@ -122,6 +124,25 @@ Without the second line, Scout never offers the tool to Nemotron, and `check` sa
 - A shop that only Google knows is never drawn on the OpenStreetMap map, and its address is neither stored nor shown. It gets an "Open in Google Maps" button in a separate box with Google's required credit instead. The demo key has no EEA billing account, so the EEA permission to show Google content on other maps may not apply to it.
 - An address is geocoded onto the map only when a source other than Google backs the record.
 
+## Visitors in the loop
+
+Scout's answers are a starting point; people who go there know better. Every shop on the screen asks:
+
+1. **"Have you been there? Does this shop exist?"** Yes or no.
+2. **"Anything that doesn't match?"** An optional note, for example "it's a Turkish perfume shop, not an Arab one".
+
+Below the results, **"Know a shop Scout missed?"** takes a tip: name, where, what they sell, and an optional link.
+
+**What happens with them**
+
+- **The next time the shop appears,** the card shows what visitors said: how many say it exists or doesn't, and their latest notes, marked "not checked by Scout".
+- **The latest report counts.** When it says a shop no longer exists, a confirmed shop goes back to "not yet confirmed" until someone confirms it again. When it says a shop Scout found closed or moved is there, the shop comes back as "not yet confirmed" for another check.
+- **A report never removes a shop.** Anyone could send one, so it only changes how sure Scout is.
+- **The model sees reports as data.** They travel with the map entries and search results that show the shop again. The model uses a correction unless other evidence contradicts it, and says so in its reason. Instructions written in a note are ignored, like instructions written on a web page.
+- **Tips become leads.** Scout adds the five most recent tips to the next searches and checks them like any other lead. A tip is never evidence on its own. The `verify` benchmark ignores tips, so its score stays clean.
+
+**What is kept:** only what people typed and the date. No account, no IP address, no browser details. The form asks people not to put names or contact details in their notes. Each shop takes at most 5 reports a day, and Scout takes at most 50 tips a day. Everything stays on this machine in `scout/feedback/`, which is never committed.
+
 ## What the code enforces, whatever the model says
 
 - **robots.txt is final.** If a site asks crawlers to stay out, neither our fetcher nor Tavily reads it, and the record is marked `crawl: false`.
@@ -131,6 +152,7 @@ Without the second line, Scout never offers the tool to Nemotron, and `check` sa
 - **The comparison is measured, not claimed.** Each search first runs the same request as a plain web search, and the screen shows which shops that search would have missed. The comparison is with a Tavily search, not with Google.
 - **The vocabulary is closed.** Every record is checked against the schema. A value outside the vocabulary goes back to the model with the reason.
 - **Budgets are counted in code.** When the map searches, Google searches, web searches or page reads run out, the model has to submit.
+- **Visitors can correct Scout, but not erase a shop.** A report changes how sure Scout is, never whether the shop is shown, and it is applied when results are shown, so saved runs stay as they were.
 - **Google content stays Google's.** Place IDs only in the logs, no Google coordinates at all, no address known only from Google, and no Google results to the model unless Nebius keeps no data.
 - **Pages are data.** Page text and map entries reach the model only as tool answers, never as instructions.
 - **Business data only.** Scout records the channels a business publishes for customers, never private addresses or personal numbers.
@@ -177,7 +199,7 @@ Submissions close **30 October 2026, 10:00 Pacific**.
 
 - Work on a branch and open a pull request into `main`.
 - Run `python3 scout/test_offline.py` before you push.
-- Never commit `scout/.env`, `scout/runs/`, `scout/cache/` or anything in `data/` except its README. `.gitignore` covers them all, so `git add -f` is the only way to get them in. Don't use it for these.
+- Never commit `scout/.env`, `scout/runs/`, `scout/cache/`, `scout/feedback/` or anything in `data/` except its README. `.gitignore` covers them all, so `git add -f` is the only way to get them in. Don't use it for these.
 
 ## About Culturalmaxxing
 

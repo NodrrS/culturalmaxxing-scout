@@ -7,6 +7,9 @@ scout/runs/
 
 # cached answers from OpenStreetMap
 scout/cache/
+
+# what visitors reported and tipped: their words, kept on this machine only
+scout/feedback/
 data/*
 !data/README.md
 

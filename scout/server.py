@@ -23,6 +23,7 @@ WEB = HERE / "web"
 sys.path.insert(0, str(HERE))
 
 import agent  # noqa: E402
+import feedback  # noqa: E402
 import clients  # noqa: E402
 import google_places  # noqa: E402
 import listing  # noqa: E402
@@ -159,8 +160,8 @@ class Handler(BaseHTTPRequestHandler):
             data = self.body()
         except (ValueError, json.JSONDecodeError) as e:
             return self.json({"error": str(e)}, 400)
-        route = {"/api/find": self.find, "/api/decision": self.decision,
-                 "/api/listing": self.listing}.get(urlsplit(self.path).path)
+        route = {"/api/find": self.find, "/api/decision": self.decision, "/api/listing": self.listing,
+                 "/api/report": self.report, "/api/tip": self.tip}.get(urlsplit(self.path).path)
         if not route:
             return self.json({"error": "not found"}, 404)
         return route(data)
@@ -185,7 +186,7 @@ class Handler(BaseHTTPRequestHandler):
             for event in events:
                 time.sleep(REPLAY_STEP)
                 self.emit("step", event)
-            self.emit("done", run)
+            self.emit("done", dict(run, shops=feedback.annotate(run.get("shops") or [])))
         except Gone:
             pass
 
@@ -223,11 +224,31 @@ class Handler(BaseHTTPRequestHandler):
                    "usage": dict(clients.usage), **out}
             store.save(run_id, run)
             print(f"  {len(out['shops'])} shops. {clients.cost_line()}")
-            self.emit("done", dict(run, id=run_id, decisions={}))
+            self.emit("done", dict(run, id=run_id, decisions={}, shops=feedback.annotate(out["shops"])))
         except Gone:
             pass
         finally:
             running.release()
+
+    def report(self, data: dict) -> None:
+        """A visitor says whether a shop exists, and may add a correction."""
+        try:
+            run = store.load(str(data["run"]))
+            record = next(s for s in run["shops"] if s["name"] == str(data["shop"]))
+            shop = feedback.report(record, data["exists"], str(data.get("note") or ""), run=run["id"])
+        except feedback.FeedbackError as e:
+            return self.json({"error": str(e)}, 429 if "enough" in str(e) else 400)
+        except (KeyError, ValueError, OSError, StopIteration):
+            return self.json({"error": "that report could not be recorded"}, 400)
+        self.json({"shop": shop})
+
+    def tip(self, data: dict) -> None:
+        """A visitor tells Scout about a shop it missed."""
+        try:
+            feedback.tip(data.get("name"), data.get("where"), data.get("what"), data.get("link"))
+        except feedback.FeedbackError as e:
+            return self.json({"error": str(e)}, 429 if "enough" in str(e) else 400)
+        self.json({"ok": True})
 
     def decision(self, data: dict) -> None:
         try:

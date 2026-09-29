@@ -74,6 +74,7 @@ Hackathon Phases **0–7** may still run `python3 scout/server.py` for speed. An
 | Discovery agent | `scout/agent.py` |
 | OpenStreetMap (Overpass, Nominatim) | `scout/osm.py` |
 | Google Maps (optional, demo key) | `scout/google_places.py` |
+| Visitor reports and tips | `scout/feedback.py` |
 | Nebius + Tavily + schema | `scout/clients.py` |
 | Draft listings | `scout/listing.py` |
 | Persistence | `scout/store.py` |
@@ -254,6 +255,27 @@ Catch shops that opened recently: owners often add them to Google Maps before an
 - [ ] Live run: does Nemotron use `google_places` for "Neueröffnung" style requests, and do its leads survive the checks?
 - [ ] Before any launch: the demo key is for development and testing only. A normal key needs a billing account; with an EEA billing address, Google content may then be shown on non-Google maps
 - [ ] When routes move to `backend/`, keep `scout/google_places.py` as the domain layer
+
+---
+
+## Phase 2d: Visitors in the loop
+
+People who went to a shop correct Scout, and send tips about shops it missed.
+
+### 2d.1 Built (branch `visitor-feedback`)
+
+- [x] Each shop card asks "Does this shop exist?" (yes / no), then takes an optional note ("a Turkish perfume shop, not an Arab one")
+- [x] "Know a shop Scout missed?" tip box: name, where, what they sell, optional link
+- [x] `scout/feedback.py`: reports and tips in `scout/feedback/*.jsonl` (gitignored); no account, no IP; at most 5 reports per shop a day and 50 tips a day
+- [x] Reports are applied when results are shown (live and replay): the latest "gone" moves a confirmed shop to "not yet confirmed"; the latest "exists" brings a closed or moved shop back for a re-check. A report never removes a shop
+- [x] The model sees reports inside the tool answers that show the shop again, as data; tips become leads for requests (never for `verify`)
+- [x] 8 offline tests
+
+### 2d.2 Still to do
+
+- [ ] Before any public launch: moderation for visitor notes (they are shown to other visitors), and abuse limits that don't need personal data
+- [ ] `/api/report` and `/api/tip` live in `scout/server.py` for now; move them into `backend/` with the other routes (Appendix E). The logic stays in `scout/feedback.py`
+- [ ] Video: show one report changing a result, as the answer to "what if the AI is wrong?"
 
 ---
 
@@ -611,7 +633,7 @@ Suggested endpoint keys (names illustrative — align with OpenAPI):
 
 ## Notes
 
-- **Human in the loop:** Automation ends at the review queue; `accept` / `reject` / revisit on screen is the intended workflow for the hackathon story.
+- **Human in the loop:** Scout shows its evidence and sends doubtful shops to "not yet confirmed"; visitors report whether a shop exists, correct it, and send tips (Phase 2d). That loop is the hackathon story. The curator review queue (accept / reject / revisit decisions) returns with the Culturalmaxxing feature after the hackathon.
 - **NVIDIA + Tavily + OpenStreetMap narrative:** Nemotron plans and submits structured shops; Tavily is search, the plain-search comparison, and Extract when the polite fetcher gets a thin page; OpenStreetMap finds shops without websites and places them on the map — say all three in the video.
 - **Priority order:** Phase 0 → Phase 1 (check + smoke find) → Phase 2b.4 (live map runs) → Phase 3 (verify) → Phase 7 (demo + video) → Phase 2 as depth → Phase 6/8/9 in parallel → Phases 4, 5 and 10 after the hackathon.
 - **Backend folder:** All HTTP, Docker, deploy env, and FastAPI routes belong in **`backend/`**; migrate off `scout/server.py` in Phase 10 / Appendix E — do not add a second backend tree.
