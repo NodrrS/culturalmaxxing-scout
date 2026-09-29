@@ -1,0 +1,15 @@
+# keys
+.env
+scout/.env
+
+# records about real shops that have not agreed to anything
+scout/runs/
+data/*
+!data/README.md
+
+# fonts are added locally; check their licence before committing them
+scout/web/fonts/
+
+__pycache__/
+*.pyc
+.DS_Store

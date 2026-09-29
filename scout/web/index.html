@@ -1,0 +1,53 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Scout · Culturalmaxxing Berlin</title>
+<link rel="stylesheet" href="/fonts.css">
+<link rel="stylesheet" href="/app.css">
+</head>
+<body>
+<div id="banner" class="strip" hidden></div>
+<div class="page">
+  <header class="hdr">
+    <div class="hdr-top">
+      <div class="eyebrow">Culturalmaxxing Berlin · Scout</div>
+      <button class="langbtn" id="lang" type="button" aria-label="Sprache wechseln">DE</button>
+    </div>
+    <h1 class="display" data-t="title"></h1>
+    <p class="sub" data-t="sub"></p>
+  </header>
+
+  <section class="brief" aria-labelledby="brief-label">
+    <label class="eyebrow" id="brief-label" for="brief" data-t="briefLabel"></label>
+    <textarea id="brief" rows="2" maxlength="300"></textarea>
+    <div class="row">
+      <button class="btn primary" id="find" type="button" data-t="find"></button>
+      <div class="replay">
+        <label class="sr" for="runs" data-t="recorded"></label>
+        <select id="runs"></select>
+        <button class="btn outline" id="replay" type="button" data-t="replay"></button>
+      </div>
+    </div>
+    <p class="note" id="keys"></p>
+  </section>
+
+  <div class="cols">
+    <section class="log" aria-labelledby="log-label">
+      <div class="eyebrow" id="log-label" data-t="logLabel"></div>
+      <ol id="steps" aria-live="polite"></ol>
+      <p class="note" id="cost"></p>
+    </section>
+    <section class="queue" aria-labelledby="queue-label">
+      <div class="eyebrow" id="queue-label" data-t="queueLabel"></div>
+      <p class="count" id="count"></p>
+      <div id="cards"></div>
+    </section>
+  </div>
+
+  <footer class="foot" data-t="foot"></footer>
+</div>
+<script src="/app.js"></script>
+</body>
+</html>
