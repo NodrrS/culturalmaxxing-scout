@@ -24,6 +24,7 @@ sys.path.insert(0, str(HERE))
 
 import agent  # noqa: E402
 import clients  # noqa: E402
+import google_places  # noqa: E402
 import listing  # noqa: E402
 import store  # noqa: E402
 
@@ -64,6 +65,7 @@ def status() -> dict:
     return {"nebius_key": bool(os.environ.get("NEBIUS_API_KEY")),
             "tavily_key": bool(os.environ.get("TAVILY_API_KEY")),
             "bot_contact": bool(os.environ.get("CMX_BOT_CONTACT")),
+            "google_key": bool(google_places.key()), "google": google_places.enabled(),
             "model": clients.nebius_model(), "runs": store.list_runs()}
 
 

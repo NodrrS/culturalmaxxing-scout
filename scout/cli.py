@@ -1,6 +1,6 @@
 """Scout — command line.
 
-  python3 scout/cli.py check                      are the keys and the map working? (5 small calls)
+  python3 scout/cli.py check                      are the keys and the maps working? (6 small calls)
   python3 scout/cli.py find "BRIEF" [--seeds N]   research a brief, and N seeds from data/seeds.json
   python3 scout/cli.py verify [--limit N]         re-check the shops a person already judged, and score
   python3 scout/cli.py probe                      can Tavily see the registered shops' product pages?
@@ -33,6 +33,10 @@ def print_step(event: dict) -> None:
         print(f"  map      {', '.join(event['words']) or 'all fashion shops'}{where}  ->  {event['found']} places")
     elif step == "map_failed":
         print(f"  map      failed: {event['reason']}")
+    elif step == "google":
+        print(f"  google   {event['query']!r}  ->  {event['found']} places on Google Maps")
+    elif step == "google_failed":
+        print(f"  google   failed: {event['reason']}")
     elif step == "search":
         print(f"  search   {event['query']!r}  ->  {len(event['results'])} results")
     elif step == "read":
@@ -48,7 +52,8 @@ def print_step(event: dict) -> None:
     elif step == "submit":
         print(f"  submit   {event['shops']} shops")
     elif step == "located":
-        print(f"  located  {event['shops']} of {event['total']} on the map, {event['via_map']} from OpenStreetMap")
+        print(f"  located  {event['shops']} of {event['total']}: {event['via_map']} from OpenStreetMap, "
+              f"{event.get('via_google', 0)} as Google Maps links")
 
 
 def save(run_id: str, data: dict) -> None:
@@ -122,15 +127,31 @@ def check_osm() -> bool:
     return bool(found["found"]) and bool(spot)
 
 
+def check_google() -> bool:
+    import google_places
+    if not google_places.key():
+        print(f"   not set; Scout works without it. A Maps Demo Key needs no credit card: {google_places.DEMO_KEY}")
+        return True
+    found = google_places.search("Abaya Neukölln")
+    print(f"   Text Search: {found['found']} places for 'Abaya Neukölln'")
+    if not google_places.zero_retention():
+        print("   ! Google results stay away from Nemotron until Zero Data Retention is on in Nebius Token Factory"
+              " (account profile page) and NEBIUS_ZERO_DATA_RETENTION=on is in scout/.env")
+        return False
+    return True
+
+
 def cmd_check(args) -> int:
+    import google_places
     import osm
     ok = True
     for title, part in (("1. Nebius Token Factory", check_nebius), ("2. Tavily", check_tavily),
-                        ("3. OpenStreetMap (no key needed)", check_osm)):
+                        ("3. OpenStreetMap (no key needed)", check_osm),
+                        ("4. Google Maps (optional, demo key)", check_google)):
         print(title)
         try:
             ok = part() and ok
-        except (clients.MissingKey, clients.ApiError, osm.MapError) as e:
+        except (clients.MissingKey, clients.ApiError, osm.MapError, google_places.GoogleError) as e:
             print(f"   ! {e}")
             ok = False
         except urllib.error.URLError as e:
