@@ -2,7 +2,7 @@
 
   python3 scout/test_offline.py
 
-Nebius, Tavily and the engine's fetcher are replaced by scripted stand-ins, so
+Nebius, Tavily, OpenStreetMap and the engine's fetcher are replaced by scripted stand-ins, so
 these tests show that the code does what it should with the answers it gets.
 They do not show that the live services answer in that shape: `cli.py check`
 does that.
@@ -15,7 +15,9 @@ import os
 import sys
 import tempfile
 import threading
+import time
 import urllib.error
+import urllib.parse
 import urllib.request
 from pathlib import Path
 
@@ -26,12 +28,15 @@ import agent  # noqa: E402
 import clients  # noqa: E402
 import cli  # noqa: E402
 import listing  # noqa: E402
+import osm  # noqa: E402
 import server  # noqa: E402
 import store  # noqa: E402
 
 
 os.environ["NEBIUS_API_KEY"] = "test-key"
 os.environ["TAVILY_API_KEY"] = "test-key"
+os.environ.pop("CMX_BOT_CONTACT", None)
+MAP_CACHE = tempfile.TemporaryDirectory()
 
 
 class Fake:
@@ -71,9 +76,43 @@ def calls(*pairs):
         for i, (n, a) in enumerate(pairs)]}
 
 
+class FakeMap:
+    """Scripted answers for Overpass and Nominatim."""
+
+    def __init__(self, elements=(), geocoded=None, fail_first=0):
+        self.elements, self.geocoded, self.fail_first = list(elements), geocoded, fail_first
+        self.requests = []
+
+    def __call__(self, method, url, data, timeout):
+        self.requests.append((url, urllib.parse.unquote_plus(data.decode()) if data else None))
+        if data is None:                                   # Nominatim is a GET
+            return 200, json.dumps([self.geocoded] if self.geocoded else [])
+        if self.fail_first:
+            self.fail_first -= 1
+            return 504, "Gateway Timeout"
+        return 200, json.dumps({"elements": self.elements})
+
+    def overpass(self):
+        return [d for _, d in self.requests if d]
+
+    def nominatim(self):
+        return [u for u, d in self.requests if d is None]
+
+
+def node(i, name, lat, lon, **tags):
+    return {"type": "node", "id": i, "lat": lat, "lon": lon, "tags": {"name": name, "shop": "clothes", **tags}}
+
+
+NAEHSTUBE = node(101, "Nähstube Beispiel", 52.4989, 13.4185, **{
+    "addr:street": "Beispielgasse", "addr:housenumber": "4", "addr:postcode": "10999", "addr:city": "Berlin",
+    "opening_hours": "Mo-Fr 10:00-18:30"})
+PLATZ = {"lat": "52.4864", "lon": "13.4296", "display_name": "Beispielplatz, Berlin", "osm_type": "node", "osm_id": 5}
+
+
 def record(**changes):
     base = {"name": "Modehaus Beispiel", "website": "https://www.modehaus-beispiel.example", "verdict": "accept",
-            "verdict_reason": "Berlin address in the Impressum.", "in_berlin": "yes", "district": "Neukölln",
+            "verdict_reason": "Berlin address in the Impressum.", "in_berlin": "yes", "storefront": "yes",
+            "district": "Neukölln",
             "address_as_published": "Beispielstraße 1, 12043 Berlin", "status": "trading",
             "status_evidence": "shop is online", "sells": "evening wear", "culture_guess": "middle_eastern",
             "has_online_shop": "yes", "platform": "shopify", "instagram": None, "business_email": None,
@@ -96,10 +135,13 @@ def site(allowed=True, html=b"<html><body>" + b"Impressum Modehaus Beispiel, Bei
     return fetched
 
 
-def use(fake):
+def use(fake, maps=None):
     clients.transport = fake
     for k in clients.usage:
         clients.usage[k] = 0
+    osm.transport = maps or FakeMap()
+    osm.CACHE = Path(tempfile.mkdtemp(dir=MAP_CACHE.name))
+    osm.sleep, osm.clock, osm._last_nominatim = (lambda seconds: None), time.monotonic, -1e9
     return fake
 
 
@@ -173,7 +215,7 @@ def test_happy_path_search_read_feed_submit():
     shop = out["shops"][0]
     assert shop["verdict"] == "accept" and shop["flags"] == [] and shop["crawl"] is True
     assert fetched == ["https://www.modehaus-beispiel.example/impressum"]
-    assert [e["step"] for e in events] == ["search", "read", "platform", "submit"]
+    assert [e["step"] for e in events] == ["search", "read", "platform", "submit", "located"]
     assert events[1]["via"] == "own_fetcher"
     assert fake.asked("/search")[0]["country"] == "germany"
     assert "zalando.de" in fake.asked("/search")[0]["exclude_domains"]
@@ -243,7 +285,7 @@ def test_bad_submit_is_sent_back_once_and_repaired():
                           calls(("submit_shops", {"shops": [record(sources=["https://www.modehaus-beispiel.example/"])]}))]))
     out = agent.research([{"name": "Modehaus Beispiel"}], log=events.append)
     assert out["shops"][0]["culture_guess"] == "middle_eastern"
-    assert [e["step"] for e in events] == ["search", "submit_rejected", "submit"]
+    assert [e["step"] for e in events] == ["search", "submit_rejected", "submit", "located"]
     told = json.loads(fake.asked("/chat/completions")[-1]["messages"][-1]["content"])
     assert "'oriental' is not one of" in told["problems"][0]
 
@@ -441,11 +483,13 @@ def test_screen_replays_the_sample_and_says_it_is_invented():
         status, head, body = screen.ask("/api/replay?run=sample")
         got = events(body)
         assert status == 200 and head["Content-Type"].startswith("text/event-stream")
-        assert got[0] == ("start", {"id": "sample", "brief": "Central Asian occasion wear in Berlin",
+        assert got[0] == ("start", {"id": "sample", "brief": "Central Asian occasion wear",
                                     "replay": True, "sample": True})
-        assert [k for k, _ in got].count("step") == 13 and got[-1][0] == "done"
+        assert [k for k, _ in got].count("step") == 19 and got[-1][0] == "done"
         shops = got[-1][1]["shops"]
-        assert len(shops) == 5 and all(".example" in s["website"] for s in shops)
+        assert len(shops) == 6 and all(".example" in (s["website"] or ".example") for s in shops)
+        assert all(s["location"] is None or s["location"]["osm_url"] is None for s in shops)  # no real map entries
+        assert all(".example" in u for u in got[-1][1]["baseline"]["results"])
         assert clients.validate({"shops": [{k: v for k, v in s.items() if k in agent.SHOP["properties"]}
                                            for s in shops]}, agent.SUBMIT) == []   # the sample has the real shape
 
@@ -457,9 +501,10 @@ def test_screen_runs_scout_live_and_keeps_the_run():
     with Screen() as screen:
         status, _, body = screen.ask("/api/find", {"brief": "evening wear in Neukölln"})
         got = events(body)
-        assert status == 200 and [k for k, _ in got] == ["start", "step", "step", "done"]
+        assert status == 200 and [k for k, _ in got] == ["start", "step", "step", "step", "step", "done"]
+        assert [e["step"] for k, e in got if k == "step"] == ["baseline", "search", "submit", "located"]
         run_id = got[0][1]["id"]
-        assert got[-1][1]["shops"][0]["name"] == "Modehaus Beispiel" and got[-1][1]["usage"]["tavily_credits"] == 1
+        assert got[-1][1]["shops"][0]["name"] == "Modehaus Beispiel" and got[-1][1]["usage"]["tavily_credits"] == 2
         listed = json.loads(screen.ask("/api/status")[2])["runs"]
         assert [r["id"] for r in listed] == [run_id] and listed[0]["shops"] == 1
         # a decision is recorded and comes back with the replay
@@ -467,7 +512,7 @@ def test_screen_runs_scout_live_and_keeps_the_run():
         assert status == 200 and json.loads(body)["decision"] == "visit"
         again = events(screen.ask(f"/api/replay?run={run_id}")[2])
         assert again[-1][1]["decisions"]["Modehaus Beispiel"]["decision"] == "visit"
-        assert [k for k, _ in again] == ["start", "step", "step", "done"]
+        assert [k for k, _ in again] == ["start", "step", "step", "step", "step", "done"]
         assert screen.ask("/api/decision", {"run": run_id, "shop": "Modehaus Beispiel", "decision": "publish"})[0] == 400
 
 
@@ -500,6 +545,166 @@ def test_sample_listing_is_served_without_touching_the_network():
         assert status == 200 and json.loads(body)["status"] == "draft_awaiting_shop_approval"
         assert screen.ask("/api/listing", {"run": "sample", "shop": "Haus Muster"})[0] == 404
 
+
+# ---- OpenStreetMap ---------------------------------------------------------------
+
+def test_map_search_builds_a_bounded_word_start_query():
+    maps = FakeMap(elements=[NAEHSTUBE, {"type": "way", "id": 7, "center": {"lat": 52.5, "lon": 13.4},
+                                         "tags": {"name": "Abaya Muster", "shop": "boutique"}},
+                             {"type": "node", "id": 8, "lat": 52.5, "lon": 13.4, "tags": {"shop": "clothes"}}])
+    use(Fake(), maps)
+    found = osm.search(['Abaya"];out;', "Nähstube", "ab"])
+    query = maps.overpass()[0]
+    assert "(52.3383,13.0884,52.6755,13.7611)" in query and "timeout:25" in query
+    assert query.split('["name"~"')[1].split('",i]')[0] == "(^|[^A-Za-z])(abaya out|nähstube)"
+    assert found["found"] == 2                                      # the nameless shop is left out
+    first, second = found["places"]
+    assert (first["name"], first["osm_url"], first["lat"]) == ("Abaya Muster", "https://www.openstreetmap.org/way/7", 52.5)
+    assert second["address"] == "Beispielgasse 4, 10999 Berlin" and second["opening_hours"] == "Mo-Fr 10:00-18:30"
+
+
+def test_map_search_tries_the_next_server_and_caches():
+    maps = FakeMap(elements=[NAEHSTUBE], fail_first=1)
+    use(Fake(), maps)
+    assert osm.search(["nähstube"])["found"] == 1
+    assert [u for u, _ in maps.requests] == osm.OVERPASS           # the first was busy, the second answered
+    osm.search(["nähstube"])
+    assert len(maps.requests) == 2                                  # the same search again came from the cache
+    use(Fake(), FakeMap(fail_first=9))
+    try:
+        osm.search(["abaya"])
+    except osm.MapError as e:
+        assert "busy" in str(e) and "HTTP 504" in str(e)
+    else:
+        raise AssertionError("expected MapError")
+
+
+def test_map_search_around_a_place_sorts_by_distance():
+    maps = FakeMap(elements=[node(1, "Weit Muster", 52.52, 13.45), node(2, "Nah Muster", 52.4866, 13.4300)],
+                   geocoded=PLATZ)
+    use(Fake(), maps)
+    found = osm.search([], near="Beispielplatz")
+    assert [p["name"] for p in found["places"]] == ["Nah Muster", "Weit Muster"]
+    assert "(around:1200,52.4864,13.4296)" in maps.overpass()[0] and found["around"] == "Beispielplatz, Berlin"
+    url = maps.nominatim()[0]
+    assert "bounded=1" in url and "countrycodes=de" in url and "q=Beispielplatz%2C+Berlin" in url
+    use(Fake(), FakeMap())
+    assert osm.search([], near="Nirgendwo")["error"].startswith("could not find")
+    assert "error" in osm.search(["x"])                              # nothing left to search for
+
+
+def test_nominatim_gets_at_most_one_request_a_second():
+    maps = FakeMap(geocoded=PLATZ)
+    use(Fake(), maps)
+    waits = []
+    osm.sleep, osm.clock = waits.append, lambda: 100.0
+    osm.geocode("Beispielplatz")
+    osm.geocode("Musterweg 2")
+    osm.geocode("Beispielplatz")                                     # cached: no request, no wait
+    assert waits == [1.0] and len(maps.nominatim()) == 2
+
+
+def test_map_requests_name_the_app_and_a_contact():
+    os.environ["CMX_BOT_CONTACT"] = "scout@example.org"
+    try:
+        assert osm.user_agent() == f"culturalmaxxing-scout/0.1 (+{osm.REPO}; scout@example.org)"
+    finally:
+        del os.environ["CMX_BOT_CONTACT"]
+
+
+def test_a_map_entry_is_a_source_and_places_the_shop():
+    site()
+    maps = FakeMap(elements=[NAEHSTUBE])
+    events = []
+    fake = use(Fake(chat=[calls(("map_search", {"words": ["nähstube"], "near": None})),
+                          calls(("submit_shops", {"shops": [record(
+                              name="Nähstube Beispiel", website=None, platform="none", has_online_shop="no",
+                              address_as_published="Beispielgasse 4, 10999 Berlin",
+                              sources=["https://www.openstreetmap.org/node/101"])]}))]), maps)
+    shop = agent.research([{"name": "Nähstube Beispiel"}], log=events.append)["shops"][0]
+    assert shop["verdict"] == "accept" and shop["flags"] == []      # the map entry counts as a traced source
+    assert shop["location"] == {"lat": 52.4989, "lon": 13.4185, "via": "openstreetmap",
+                                "osm_url": "https://www.openstreetmap.org/node/101",
+                                "mapped_name": "Nähstube Beispiel", "opening_hours": "Mo-Fr 10:00-18:30"}
+    assert maps.nominatim() == []                                    # no address lookup needed
+    assert [e["step"] for e in events] == ["map", "submit", "located"] and events[-1]["via_map"] == 1
+    told = json.loads(fake.asked("/chat/completions")[1]["messages"][-1]["content"])
+    assert told["places"][0]["osm_url"] == "https://www.openstreetmap.org/node/101" and "volunteers" in told["note"]
+
+
+def test_a_shop_you_can_visit_is_placed_by_its_address():
+    site()
+    maps = FakeMap(geocoded={"lat": "52.4812", "lon": "13.4351", "display_name": "Beispielstraße 1, Berlin",
+                             "osm_type": "way", "osm_id": 9})
+    use(Fake(chat=[calls(("read_page", {"url": "https://www.modehaus-beispiel.example/impressum"})),
+                   calls(("submit_shops", {"shops": [record()]}))]), maps)
+    shop = agent.research([{"name": "Modehaus Beispiel"}])["shops"][0]
+    assert shop["location"]["via"] == "address"
+    assert (shop["location"]["lat"], shop["location"]["lon"]) == (52.4812, 13.4351)
+    assert "q=Beispielstra%C3%9Fe+1%2C+12043+Berlin" in maps.nominatim()[0]
+
+
+def test_no_place_on_the_map_for_shops_you_cannot_visit():
+    site()
+    maps = FakeMap(elements=[NAEHSTUBE], geocoded=PLATZ)
+    use(Fake(chat=[calls(("map_search", {"words": ["nähstube"], "near": None})),
+                   calls(("submit_shops", {"shops": [
+                       record(name="Nähstube Beispiel", storefront="no"),           # online only
+                       record(name="Laden Muster", storefront="unconfirmed"),        # not confirmed
+                       record(name="Zu Muster", verdict="reject")]}))]), maps)      # closed or elsewhere
+    shops = agent.research([{"name": "Nähstube Beispiel"}])["shops"]
+    assert [s["location"] for s in shops] == [None, None, None] and maps.nominatim() == []
+
+
+def test_a_cited_map_entry_must_be_the_same_shop():
+    site()
+    maps = FakeMap(elements=[node(7, "Max Muster Shop", 52.49, 13.42,
+                                  **{"addr:street": "Andere Straße", "addr:housenumber": "9"})])
+    use(Fake(chat=[calls(("map_search", {"words": ["muster"], "near": None})),
+                   calls(("submit_shops", {"shops": [record(name="Muster Mode",
+                                                            sources=["https://www.openstreetmap.org/node/7"])]}))]),
+        maps)
+    shop = agent.research([{"name": "Muster Mode"}])["shops"][0]
+    assert shop["location"] is None                                  # another street: not this shop
+    place = {"name": "Max Muster Shop", "address": None}
+    assert agent.same_shop(place, record(name="Muster Mode", address_as_published=None), cited=True)
+    assert not agent.same_shop(place, record(name="Muster Mode"), cited=False)
+
+
+def test_a_failed_map_search_is_reported_and_the_run_goes_on():
+    site()
+    events = []
+    fake = use(Fake(chat=[calls(("map_search", {"words": ["abaya"], "near": None})),
+                          calls(("map_search", {"words": 5, "near": None})),
+                          calls(("submit_shops", {"shops": [record(verdict="revisit", sources=[])]}))]),
+               FakeMap(fail_first=9))
+    agent.research([{"name": "Modehaus Beispiel"}], log=events.append)
+    answers = [json.loads(m["content"]) for m in fake.asked("/chat/completions")[2]["messages"] if m["role"] == "tool"]
+    assert "map search failed" in answers[0]["error"] and "wrong arguments" in answers[1]["error"]
+    assert events[0]["step"] == "map_failed"
+
+
+def test_a_plain_search_shows_which_shops_it_would_miss():
+    site()
+    fake = use(Fake(search=[{"title": "Kette", "url": "https://www.kette-beispiel.example/berlin"},
+                            {"title": "Modehaus", "url": "https://modehaus-beispiel.example/"},
+                            {"title": "Insta", "url": "https://www.instagram.com/laden.muster/"}],
+                    chat=[calls(("submit_shops", {"shops": [
+                        record(),
+                        record(name="Laden Muster", website=None, instagram="@laden.muster"),
+                        record(name="Versteckt Muster", website="https://versteckt-muster.example"),
+                        record(name="Ohne Website", website=None, instagram=None)]}))]))
+    events = []
+    out = agent.research([], brief="evening wear", log=events.append)
+    plain = fake.asked("/search")[0]
+    assert plain["query"] == "evening wear Berlin" and plain["max_results"] == 10 and "exclude_domains" not in plain
+    assert [(s["visibility"]["plain_search_rank"], s["visibility"]["has_website"]) for s in out["shops"]] == [
+        (2, True), (3, False), (None, True), (None, False)]
+    assert events[0]["step"] == "baseline" and out["baseline"]["query"] == "evening wear Berlin"
+    first = fake.asked("/chat/completions")[0]["messages"]
+    assert "sells what the person is looking for" in first[0]["content"]
+    assert "looking for: evening wear" in first[1]["content"]
+    assert agent.CULTURAL in agent.system_prompt(None)             # verify keeps Culturalmaxxing's test
 
 if __name__ == "__main__":
     tests = [(n, f) for n, f in sorted(globals().items()) if n.startswith("test_") and callable(f)]

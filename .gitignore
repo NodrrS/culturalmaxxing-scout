@@ -4,6 +4,9 @@ scout/.env
 
 # records about real shops that have not agreed to anything
 scout/runs/
+
+# cached answers from OpenStreetMap
+scout/cache/
 data/*
 !data/README.md
 

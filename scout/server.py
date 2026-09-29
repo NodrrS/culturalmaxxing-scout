@@ -33,8 +33,10 @@ TYPES = {".html": "text/html; charset=utf-8", ".css": "text/css; charset=utf-8",
 FONTS = {"Spectral": [("Spectral-Regular.woff2", 400, "normal"), ("Spectral-Medium.woff2", 500, "normal"),
                       ("Spectral-Italic.woff2", 400, "italic")],
          "Karla": [("Karla-Variable.woff2", "400 700", "normal")]}
+TILES = "https://tile.openstreetmap.org"   # map tiles, credited under the map
 # Run records are written by a model that read the open web. The page escapes them; this is the second lock.
-CSP = ("default-src 'none'; script-src 'self'; style-src 'self'; font-src 'self'; img-src 'self'; "
+CSP = ("default-src 'none'; script-src 'self'; style-src 'self'; font-src 'self'; "
+       f"img-src 'self' {TILES}; "
        "connect-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'")
 REPLAY_STEP = 0.45          # seconds between steps when a recorded run is replayed
 running = threading.Lock()  # one live run at a time
